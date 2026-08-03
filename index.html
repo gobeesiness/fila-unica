@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fila única — Go Beesiness</title>
+<style>
+/* ── Tokens da casa. Fonte: gobeejobs-frontend/src/theme.css. NÃO inventar paleta. ── */
+:root{
+  --mel:#ffcb05; --mel-500:#ffbd00; --mel-600:#e6a900; --mel-50:#fff5cc; --mel-soft:#fffbeb;
+  --mel-200:#ffea99; --mel-borda:#f2e6b8;
+  --tinta:#41393b; --texto:#4b5563; --muted:#757575; --fraco:#97878c;
+  --azul:#2d5de0; --azul-soft:#f1f4fe; --erro:#e02d3c;
+  --borda:#e0e0e0; --borda-2:#e5e7eb; --bg:#f5f5f5; --card:#fff; --sombra:0 1px 2px rgba(65,57,59,.06),0 4px 12px rgba(65,57,59,.05);
+  --r:10px; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"]{
+  --tinta:#f3efe9; --texto:#c9c3bd; --muted:#9a938d; --fraco:#8a807f;
+  --azul:#8fa9f5; --azul-soft:#1e2438; --erro:#ff7b85;
+  --borda:#3a3335; --borda-2:#332d2f; --bg:#1a1618; --card:#242022;
+  --mel-soft:#2b2413; --mel-50:#3a3117; --mel-borda:#4a3f1c;
+  --sombra:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg);color:var(--texto);
+  font:14px/1.55 'Inter var',Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{color:var(--tinta);margin:0;font-weight:700;letter-spacing:-.01em}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,select,textarea{font:inherit;color:var(--tinta);background:var(--card);
+  border:1px solid var(--borda);border-radius:8px;padding:7px 10px;outline:0}
+input:focus,select:focus,textarea:focus{border-color:var(--mel-600);box-shadow:0 0 0 3px var(--mel-50)}
+a{color:var(--azul);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.88em;background:var(--mel-soft);
+  border:1px solid var(--mel-borda);border-radius:4px;padding:1px 5px;color:var(--tinta)}
+
+/* ── Topo ── */
+header{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--borda);
+  padding:10px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.marca{display:flex;align-items:center;gap:9px;font-weight:900;color:var(--tinta);font-size:15px;letter-spacing:-.02em}
+.abelha{width:26px;height:26px;border-radius:7px;background:var(--mel);display:grid;place-items:center;
+  font-size:14px;flex:none}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--mel-soft);
+  border:1px solid var(--mel-borda);color:var(--tinta);white-space:nowrap}
+.espaco{flex:1}
+.btn{padding:7px 13px;border-radius:8px;font-weight:600;font-size:13px;border:1px solid var(--borda);
+  background:var(--card);color:var(--tinta);transition:.12s}
+.btn:hover{border-color:var(--mel-600);background:var(--mel-soft)}
+.btn.pri{background:var(--mel);border-color:var(--mel);color:#41393b}
+.btn.pri:hover{background:var(--mel-500);border-color:var(--mel-500)}
+.btn.pri:disabled{opacity:.45;cursor:not-allowed;background:var(--mel);border-color:var(--mel)}
+.btn.fant{border-color:transparent}
+.btn.fant:hover{background:var(--mel-soft);border-color:var(--mel-borda)}
+
+/* ── Filtros ── */
+.filtros{display:flex;gap:8px;padding:11px 18px;flex-wrap:wrap;align-items:center;
+  background:var(--card);border-bottom:1px solid var(--borda);position:sticky;top:53px;z-index:30}
+.filtros input[type=search]{min-width:210px;flex:1;max-width:340px}
+.chip{font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;border:1px solid var(--borda);
+  background:var(--card);color:var(--muted);transition:.12s}
+.chip:hover{border-color:var(--mel-600);color:var(--tinta)}
+.chip.on{background:var(--tinta);border-color:var(--tinta);color:var(--card)}
+:root[data-theme="dark"] .chip.on{background:var(--mel);color:#2a2426;border-color:var(--mel)}
+
+/* ── Quadro ── */
+main{padding:18px}
+.quadro{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
+.coluna{background:var(--card);border:1px solid var(--borda);border-radius:var(--r);overflow:hidden;
+  display:flex;flex-direction:column;min-height:120px}
+.coluna>h3{padding:11px 13px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px}
+.coluna .n{margin-left:auto;font-size:11px;color:var(--muted);font-weight:700}
+.marca-sit{width:7px;height:7px;border-radius:99px;flex:none}
+.lista{padding:9px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 260px);overflow-y:auto}
+.vazio{padding:22px 13px;color:var(--fraco);font-size:12.5px;text-align:center}
+
+.item{border:1px solid var(--borda-2);border-radius:9px;padding:10px 11px;background:var(--card);
+  cursor:pointer;transition:.12s;border-left:3px solid transparent}
+.item:hover{border-color:var(--mel-600);border-left-color:var(--mel);box-shadow:var(--sombra);transform:translateY(-1px)}
+.item .id{font-family:var(--mono);font-size:10.5px;color:var(--fraco);font-weight:600}
+.item .tit{color:var(--tinta);font-weight:600;font-size:13.3px;margin:3px 0 6px;line-height:1.4}
+.item .rodape{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10.5px;color:var(--muted)}
+.tag{background:var(--bg);border:1px solid var(--borda-2);border-radius:5px;padding:1px 6px;font-size:10px}
+.item.alta{border-left-color:var(--erro)}
+.prio-alta{color:var(--erro);font-weight:800}
+.semprova{color:var(--erro);font-weight:700}
+
+/* ── Gaveta ── */
+.fundo{position:fixed;inset:0;background:rgba(65,57,59,.42);z-index:60;opacity:0;pointer-events:none;transition:.18s}
+.fundo.on{opacity:1;pointer-events:auto}
+.gaveta{position:fixed;top:0;right:0;bottom:0;width:min(660px,100%);background:var(--card);z-index:70;
+  transform:translateX(100%);transition:.22s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;
+  border-left:1px solid var(--borda)}
+.gaveta.on{transform:none}
+.gaveta header{position:static;border-bottom:1px solid var(--borda)}
+.gaveta .corpo{padding:18px;overflow-y:auto;flex:1}
+.gaveta .pe{padding:12px 18px;border-top:1px solid var(--borda);display:flex;gap:8px;
+  align-items:center;flex-wrap:wrap;background:var(--card)}
+.campo{margin-bottom:14px}
+.campo>label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.055em;
+  color:var(--muted);font-weight:700;margin-bottom:5px}
+.campo input,.campo select,.campo textarea{width:100%}
+.campo textarea{min-height:110px;resize:vertical;font-family:inherit;line-height:1.55}
+.dupla{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.origem{background:var(--mel-soft);border:1px solid var(--mel-borda);border-radius:9px;padding:11px 13px}
+.origem .cit{font-style:italic;color:var(--tinta);border-left:2px solid var(--mel);padding-left:10px;margin-top:7px}
+.ev{display:flex;gap:8px;align-items:center;padding:7px 10px;border:1px solid var(--borda-2);
+  border-radius:8px;margin-bottom:6px;font-size:12.5px;background:var(--bg)}
+.ev .tp{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--muted);flex:none}
+.md{color:var(--texto);font-size:13.5px}
+.md p{margin:0 0 9px}.md ul{margin:0 0 9px;padding-left:19px}.md li{margin-bottom:3px}
+.md strong{color:var(--tinta)}
+
+/* ── Avisos ── */
+.aviso{padding:11px 14px;border-radius:9px;margin-bottom:14px;font-size:13px;
+  border:1px solid var(--mel-borda);background:var(--mel-soft);color:var(--tinta)}
+.aviso.ruim{border-color:var(--erro);background:color-mix(in srgb,var(--erro) 8%,transparent)}
+.aviso.info{border-color:var(--azul);background:var(--azul-soft)}
+.brinde{position:fixed;left:50%;bottom:24px;transform:translate(-50%,80px);z-index:90;
+  background:var(--tinta);color:var(--card);padding:11px 20px;border-radius:99px;font-size:13px;
+  font-weight:600;box-shadow:var(--sombra);transition:.22s;opacity:0;pointer-events:none;max-width:88vw}
+.brinde.on{transform:translate(-50%,0);opacity:1}
+.brinde.ruim{background:var(--erro);color:#fff}
+
+/* ── Conectar ── */
+.capa{position:fixed;inset:0;background:var(--bg);z-index:80;display:grid;place-items:center;padding:20px}
+.cartao{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:26px;
+  max-width:520px;width:100%;box-shadow:var(--sombra)}
+.cartao h2{margin-bottom:6px;font-size:19px}
+.cartao p{margin:0 0 16px;font-size:13px;color:var(--muted)}
+.oculto{display:none!important}
+@media(max-width:640px){
+  .quadro{grid-template-columns:1fr}.dupla{grid-template-columns:1fr}
+  .lista{max-height:none}main{padding:12px}
+  .filtros{top:auto;position:static}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ Conectar ══ -->
+<div class="capa" id="capa">
+  <div class="cartao">
+    <div class="marca" style="margin-bottom:14px"><span class="abelha">🐝</span> Fila única — Go Beesiness</div>
+    <h2>Onde está o dado</h2>
+    <p>Esta tela <strong>não guarda nada</strong>. A fonte é
+      <code>go-beesiness-regras/dados/tarefas.json</code>, em git. Se esta app sumir, o dado continua lá.</p>
+
+    <div class="campo">
+      <label>Token do GitHub — precisa de escopo <code>repo</code></label>
+      <input type="password" id="tok" placeholder="github_pat_… ou ghp_…" autocomplete="off">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:16px;color:var(--muted)">
+      <input type="checkbox" id="lembrar" style="width:auto">
+      Lembrar neste navegador
+      <span style="color:var(--erro);font-weight:700">— guarda o token em disco</span>
+    </label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn pri" id="conectar">Conectar</button>
+      <button class="btn" id="abrirArquivo">Abrir um .json do disco</button>
+      <input type="file" id="arq" accept=".json,application/json" class="oculto">
+    </div>
+    <p style="margin:15px 0 0;font-size:11.5px;line-height:1.6">
+      Sem token, ela abre <strong>só para leitura</strong>. ⚠️ Se marcar “lembrar”, ele fica no
+      <code>localStorage</code> desta máquina.
+    </p>
+  </div>
+</div>
+
+<!-- ══ App ══ -->
+<header class="oculto" id="topo">
+  <div class="marca"><span class="abelha">🐝</span> Fila única</div>
+  <span class="pill" id="pillFonte">—</span>
+  <span class="pill" id="pillTotal">—</span>
+  <div class="espaco"></div>
+  <button class="btn fant" id="tema" title="Tema claro/escuro">◐</button>
+  <button class="btn fant" id="baixar" title="Baixar o JSON">↓ JSON</button>
+  <button class="btn fant" id="recarregar" title="Reler do GitHub">↻</button>
+  <button class="btn" id="novo">+ Tarefa</button>
+  <button class="btn pri" id="salvar" disabled>Salvar no git</button>
+</header>
+
+<div class="filtros oculto" id="filtros">
+  <input type="search" id="busca" placeholder="Buscar em título, descrição, id, evidência…">
+  <span id="chipsProj" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+  <select id="fDono"><option value="">todos os donos</option></select>
+  <select id="fComp"><option value="">todos os componentes</option></select>
+  <button class="chip" id="fAlta">só prioridade alta</button>
+  <button class="chip" id="fSemProva">feito sem evidência</button>
+  <button class="btn fant" id="limpar" style="font-size:12px">limpar</button>
+</div>
+
+<main class="oculto" id="main">
+  <div id="avisos"></div>
+  <div class="quadro" id="quadro"></div>
+</main>
+
+<div class="fundo" id="fundo"></div>
+<aside class="gaveta" id="gaveta" aria-hidden="true">
+  <header>
+    <span class="pill" id="gId">—</span>
+    <div class="espaco"></div>
+    <button class="btn fant" id="fechar">✕</button>
+  </header>
+  <div class="corpo" id="gCorpo"></div>
+  <div class="pe" id="gPe"></div>
+</aside>
+
+<div class="brinde" id="brinde"></div>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════════
+   Fila única — vista sobre dados/tarefas.json.
+   Decisão do CTO 30/07: git é a fonte, a app é só a vista. Esta tela NÃO tem
+   banco, NÃO tem estado próprio e NÃO é um lugar novo. É a 8ª tentativa de
+   controle de tarefas nesta casa; as 7 anteriores morreram por inventar mais
+   um lugar onde a informação passava a morar.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+const REPO = "gobeesiness/go-beesiness-regras";
+const PATH = "dados/tarefas.json";
+const API  = "https://api.github.com";
+// A branch vem de ?branch=… — serve para olhar o dado de um PR antes de mergear.
+// Sem parâmetro é a `main`, que é onde o dado canônico mora.
+const BRANCH = new URLSearchParams(location.search).get("branch") || "main";
+
+const SITUACOES = [
+  {k:"aberto",    r:"Tem para fazer", c:"#e6a900"},
+  {k:"fazendo",   r:"Em curso",       c:"#2d5de0"},
+  {k:"bloqueado", r:"Bloqueado",      c:"#e02d3c"},
+  {k:"feito",     r:"Foi feito",      c:"#2e9e5b"},
+  {k:"descartado",r:"Descartado",     c:"#97878c"},
+];
+const DONOS = ["cto","arquiteto","equipe-jobs","equipe-mensageria","equipe-hive","terceiro"];
+const COMPONENTES = ["backend","frontend","reportgenerator","infra","docs","produto"];
+
+let dados  = {versao:1, geradoEm:"", itens:[]};
+let sha    = null;          // sha do blob lido — a trava contra sobrescrever outra sessão
+let base   = new Map();     // id -> impressao do item COMO ELE ESTAVA quando li.
+                            // É o terceiro ponto do merge: sem ele não dá para saber se
+                            // um item difere porque EU mexi ou porque OUTRA SESSÃO mexeu.
+let token  = null;
+let sujo   = false;         // há mudança não salva
+let modo   = "leitura";     // leitura | github
+let sel    = null;          // item aberto na gaveta
+const filtro = {q:"", projeto:"", dono:"", componente:"", alta:false, semProva:false};
+
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s??"").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hoje = () => new Date().toISOString().slice(0,10);
+
+function brinde(msg, ruim){
+  const b=$("#brinde"); b.textContent=msg; b.className="brinde on"+(ruim?" ruim":"");
+  clearTimeout(b._t); b._t=setTimeout(()=>b.className="brinde",ruim?5200:2600);
+}
+
+/* ── markdown mínimo: negrito, código, link, lista, parágrafo ── */
+function md(t){
+  if(!t) return "";
+  const linhas = String(t).split("\n");
+  let out="", lista=false;
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  for(const l of linhas){
+    const li = l.match(/^\s*[-*·▸]\s+(.*)$/);
+    if(li){ if(!lista){out+="<ul>";lista=true;} out+="<li>"+inline(li[1])+"</li>"; continue; }
+    if(lista){out+="</ul>";lista=false;}
+    if(l.trim()) out+="<p>"+inline(l)+"</p>";
+  }
+  if(lista) out+="</ul>";
+  return out;
+}
+
+/* ── base64 ⇄ utf-8. btoa sozinho quebra em acento, e este repo é todo em pt-BR ── */
+const b64ParaTexto = b => new TextDecoder("utf-8")
+  .decode(Uint8Array.from(atob(b.replace(/\s/g,"")), c=>c.charCodeAt(0)));
+const textoParaB64 = t => {
+  const bytes = new TextEncoder().encode(t);
+  let s=""; for(const b of bytes) s+=String.fromCharCode(b);
+  return btoa(s);
+};
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Fusão — re-aplicar o meu sobre o remoto novo, NUNCA sobrescrever.
+
+   O `dados/README.md` §7 já manda isto para quem edita o arquivo por script:
+   "re-aplique sobre o origin/main novo; NÃO faça rebase/merge do JSON". A tela
+   não seguia a regra do próprio repositório: ela fazia PUT do arquivo inteiro e,
+   quando o sha tinha mudado, oferecia "OK = sobrescrever com a sua versão" — um
+   clique apagava o que outra sessão havia escrito, sem deixar rastro.
+
+   Três entradas, como todo merge honesto:
+     base    — como o item estava quando eu li   (o ancestral)
+     meus    — como ele está na minha tela        (o meu lado)
+     remotos — como ele está no git agora         (o outro lado)
+
+   A saída parte do REMOTO. Só volta a ser meu o item que EU mexi e ninguém mais.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+// stringify com chaves ordenadas. Comparação estável: sem isso um Object.assign
+// que só reordena campos pareceria alteração, e a fusão acusaria conflito onde
+// não há — o falso positivo mais irritante que um merge pode ter.
+function impressao(v){
+  if(v===null || typeof v!=="object") return JSON.stringify(v);
+  if(Array.isArray(v)) return "["+v.map(impressao).join(",")+"]";
+  return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+impressao(v[k])).join(",")+"}";
+}
+
+function fundir(remotos, meus, base){
+  const R = new Map(remotos.map(i=>[i.id,i]));
+  const M = new Map(meus.map(i=>[i.id,i]));
+  const saida = new Map(R);                 // parte do REMOTO: o que não é meu fica intacto
+  const conflitos=[], entram=[], deOutros=[];
+
+  for(const i of remotos) if(!base.has(i.id) && !M.has(i.id)) deOutros.push(i.id);
+
+  for(const [id,meu] of M){
+    const b = base.get(id);                 // undefined = criei nesta sessão
+    const r = R.get(id);
+    if(!r){
+      if(b===undefined){ saida.set(id,meu); entram.push(id); }   // criei — entra
+      else if(impressao(meu)!==b) conflitos.push(id);            // editei, o remoto apagou
+      continue;                                                  // não editei e apagaram: vale
+    }
+    const mudeiEu = impressao(meu)!==b, mudouLa = impressao(r)!==b;
+    if(!mudeiEu)      saida.set(id,r);              // não toquei — o remoto manda
+    else if(!mudouLa) saida.set(id,meu);            // só eu mexi — o meu entra
+    else { saida.set(id,r); conflitos.push(id); }   // os dois mexeram — NÃO sobrescrevo
+  }
+
+  for(const [id,b] of base){                // o que eu excluí só some se o remoto
+    if(M.has(id)) continue;                 // ainda estiver como quando li
+    const r = R.get(id);
+    if(!r) continue;
+    if(impressao(r)===b) saida.delete(id);
+    else conflitos.push(id);                // excluí algo que outra sessão editou
+  }
+  return {itens:[...saida.values()], conflitos, entram, deOutros};
+}
+// exposta para o teste dirigir a função REAL da página, não uma cópia dela
+window.__fundir = fundir; window.__impressao = impressao;
+
+/* ═══ GitHub ═══ */
+async function gh(caminho, opcoes={}){
+  const r = await fetch(API+caminho, {...opcoes, headers:{
+    "Accept":"application/vnd.github+json",
+    "X-GitHub-Api-Version":"2022-11-28",
+    ...(token?{"Authorization":"Bearer "+token}:{}),
+    ...(opcoes.headers||{})
+  }});
+  if(!r.ok){
+    let d=""; try{ d=(await r.json()).message||""; }catch(e){}
+    throw new Error(`${r.status} ${r.statusText}${d?" — "+d:""}`);
+  }
+  return r.json();
+}
+
+async function carregar(){
+  try{
+    const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
+    sha = j.sha;
+    dados = JSON.parse(b64ParaTexto(j.content));
+    if(!Array.isArray(dados.itens)) throw new Error("o JSON não tem a chave `itens`");
+    base = new Map(dados.itens.map(i=>[i.id, impressao(i)]));   // o ancestral da fusão
+    modo="github"; sujo=false;
+    entrar(); brinde(`${dados.itens.length} itens lidos do git`);
+  }catch(e){
+    if(String(e).includes("404")){
+      dados={versao:1, geradoEm:hoje(), itens:[]}; sha=null; base=new Map(); modo="github"; sujo=false;
+      entrar(); brinde("dados/tarefas.json ainda não existe — o primeiro salvamento cria",true);
+    } else { brinde("falhou ao ler: "+e.message, true); }
+  }
+}
+
+async function salvar(){
+  if(modo!=="github"){ brinde("modo leitura — baixe o JSON e commite à mão",true); return; }
+  const bt=$("#salvar"); bt.disabled=true; bt.textContent="salvando…";
+  try{
+    // Até 3 voltas: entre reler e escrever, outra sessão ainda pode entrar.
+    for(let volta=1; volta<=3; volta++){
+      let remoto=null, shaAtual=null;
+      try{
+        const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
+        shaAtual = j.sha; remoto = JSON.parse(b64ParaTexto(j.content));
+      }catch(e){ if(!String(e).includes("404")) throw e; }
+
+      let nota = "";
+      if(remoto && Array.isArray(remoto.itens) && shaAtual!==sha){
+        const f = fundir(remoto.itens, dados.itens, base);
+        if(f.conflitos.length){
+          // O único caso em que a tela para: os dois lados mexeram no MESMO item.
+          // Antes ela oferecia sobrescrever; agora ela recusa e diz quais são.
+          brinde(`${f.conflitos.length} ${f.conflitos.length===1?"item foi editado":"itens foram editados"} `+
+                 `no git também: ${f.conflitos.join(", ")}. Nada foi sobrescrito — `+
+                 `recarregue (↻) e refaça sobre a versão nova.`, true);
+          return;
+        }
+        dados.itens = f.itens;
+        if(f.deOutros.length) nota = ` · ${f.deOutros.length} de outra sessão preservados`;
+      }
+      sha = shaAtual;
+
+      dados.geradoEm = hoje();
+      const conteudo = JSON.stringify(dados, null, 2) + "\n";
+      const n = dados.itens.length;
+      const abertos = dados.itens.filter(i=>i.situacao==="aberto").length;
+      try{
+        const r = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}`, {
+          method:"PUT",
+          body: JSON.stringify({
+            message: `registro(fila): ${n} itens, ${abertos} abertos [pela app, ${hoje()}]\n\n`+
+                     `TAREFAS-ABERTAS.md se regera deste arquivo -- rode scripts/gerar-tarefas-abertas.py.`,
+            content: textoParaB64(conteudo), sha: sha||undefined, branch: BRANCH
+          })
+        });
+        sha = r.content.sha;
+        base = new Map(dados.itens.map(i=>[i.id, impressao(i)]));  // nova linha de base
+        sujo=false; brinde("salvo no git"+nota);
+        return;
+      }catch(e){
+        // 409 = escreveram entre o meu GET e o meu PUT. Volta e funde de novo.
+        if(String(e).includes("409") && volta<3){ continue; }
+        throw e;
+      }
+    }
+    brinde("não salvou: o arquivo mudou 3 vezes durante a gravação — tente de novo", true);
+  }catch(e){ brinde("não salvou: "+e.message, true); }
+  finally{ bt.textContent="Salvar no git"; bt.disabled=!sujo; render(); }
+}
+
+function mexeu(){ sujo=true; $("#salvar").disabled=false; render(); }
+
+/* ═══ Vista ═══ */
+function passa(i){
+  if(filtro.projeto && i.projeto!==filtro.projeto) return false;
+  if(filtro.dono && i.dono!==filtro.dono) return false;
+  if(filtro.componente && i.componente!==filtro.componente) return false;
+  if(filtro.alta && i.prioridade!=="alta") return false;
+  if(filtro.semProva && !(i.situacao==="feito" && !(i.evidencia||[]).length)) return false;
+  if(filtro.q){
+    const alvo=[i.id,i.titulo,i.descricao,i.projeto,i.componente,i.dono,(i.tags||[]).join(" "),
+      i.origem?.ref,i.origem?.citacao,(i.evidencia||[]).map(e=>e.ref).join(" ")].join(" ").toLowerCase();
+    if(!alvo.includes(filtro.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function render(){
+  const vis = dados.itens.filter(passa);
+  $("#pillTotal").textContent = `${vis.length} de ${dados.itens.length}${sujo?" · não salvo":""}`;
+  $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "arquivo local (leitura)";
+  // branch fora da main precisa gritar: escrever ali não é escrever no dado canônico
+  const forade = modo==="github" && BRANCH!=="main";
+  $("#pillFonte").style.borderColor = (sujo||forade) ? "var(--erro)" : "";
+  $("#pillFonte").title = forade
+    ? `Você está numa branch, não na main. Salvar aqui escreve em ${BRANCH}.` : "";
+
+  // avisos que a própria regra do SCHEMA exige
+  const semProva = dados.itens.filter(i=>i.situacao==="feito" && !(i.evidencia||[]).length);
+  const semOrigem= dados.itens.filter(i=>!i.origem?.ref);
+  const av=[];
+  const n1 = semProva.length, n2 = semOrigem.length;
+  if(n1) av.push(`<div class="aviso ruim"><strong>${n1===1
+      ? "1 item marcado “feito” sem uma única evidência."
+      : n1+" itens marcados “feito” sem uma única evidência."}</strong> O contrato exige prova — um
+    item feito sem PR, commit ou documento é afirmação, não levantamento.
+    <button class="btn" style="margin-left:8px" onclick="window._verSemProva()">ver</button></div>`);
+  if(n2) av.push(`<div class="aviso"><strong>${n2===1?"1 item sem origem.":n2+" itens sem origem."}</strong>
+    Sem <code>origem.ref</code> não dá para saber quem pediu nem quando.</div>`);
+  if(!dados.itens.length) av.push(`<div class="aviso info">A fila está vazia. Use <strong>+ Tarefa</strong>,
+    ou rode o levantamento e gere <code>dados/tarefas.json</code>.</div>`);
+  $("#avisos").innerHTML = av.join("");
+
+  $("#quadro").innerHTML = SITUACOES.map(s=>{
+    const itens = vis.filter(i=>i.situacao===s.k)
+      .sort((a,b)=>({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
+        || String(a.id).localeCompare(String(b.id)));
+    return `<section class="coluna">
+      <h3><span class="marca-sit" style="background:${s.c}"></span>${s.r}<span class="n">${itens.length}</span></h3>
+      <div class="lista">${itens.map(cartao).join("") ||
+        `<div class="vazio">nada aqui</div>`}</div></section>`;
+  }).join("");
+
+  $$(".item").forEach(el=>el.onclick=()=>abrir(el.dataset.id));
+  montaFiltros();
+}
+
+function cartao(i){
+  const prova = i.situacao==="feito" && !(i.evidencia||[]).length;
+  const nEv = (i.evidencia||[]).length;
+  return `<article class="item ${i.prioridade==="alta"?"alta":""}" data-id="${esc(i.id)}">
+    <div class="id">${esc(i.id)}</div>
+    <div class="tit">${esc(i.titulo)}</div>
+    <div class="rodape">
+      ${i.componente?`<span class="tag">${esc(i.componente)}</span>`:""}
+      <span class="tag">${esc(i.dono||"—")}</span>
+      ${i.prioridade==="alta"?'<span class="prio-alta">▲ alta</span>':""}
+      ${nEv?`<span>✓ ${nEv} prova${nEv>1?"s":""}</span>`:""}
+      ${prova?'<span class="semprova">⚠ sem prova</span>':""}
+      ${(i.bloqueadoPor||[]).length?`<span class="tag">⛓ ${esc(i.bloqueadoPor.join(", "))}</span>`:""}
+    </div></article>`;
+}
+
+function montaFiltros(){
+  const projs=[...new Set(dados.itens.map(i=>i.projeto).filter(Boolean))].sort();
+  $("#chipsProj").innerHTML = projs.map(p=>
+    `<button class="chip ${filtro.projeto===p?"on":""}" data-p="${esc(p)}">${esc(p)}</button>`).join("");
+  $$("#chipsProj .chip").forEach(b=>b.onclick=()=>{
+    filtro.projeto = filtro.projeto===b.dataset.p ? "" : b.dataset.p; render(); });
+
+  const enche=(sel,vals,rot)=>{ const el=$(sel), v=el.value;
+    el.innerHTML=`<option value="">${rot}</option>`+vals.map(x=>`<option>${esc(x)}</option>`).join("");
+    el.value=v; };
+  enche("#fDono",[...new Set(dados.itens.map(i=>i.dono).filter(Boolean))].sort(),"todos os donos");
+  enche("#fComp",[...new Set(dados.itens.map(i=>i.componente).filter(Boolean))].sort(),"todos os componentes");
+  $("#fAlta").classList.toggle("on",filtro.alta);
+  $("#fSemProva").classList.toggle("on",filtro.semProva);
+}
+window._verSemProva = ()=>{ filtro.semProva=true; render(); };
+
+/* ═══ Gaveta ═══ */
+function abrir(id){
+  sel = dados.itens.find(i=>i.id===id);
+  if(!sel) return;
+  $("#gId").textContent = sel.id;
+  const ev = (sel.evidencia||[]);
+  const linkEv = e => {
+    const m = String(e.ref||"").match(/^([\w.-]+)\/([\w.-]+)#(\d+)$/);
+    return m ? `<a href="https://github.com/${m[1]}/${m[2]}/pull/${m[3]}" target="_blank"
+                  rel="noopener">${esc(e.ref)}</a>` : esc(e.ref);
+  };
+  $("#gCorpo").innerHTML = `
+    <h2 style="font-size:19px;line-height:1.35;margin-bottom:12px">${esc(sel.titulo)}</h2>
+    <div class="rodape" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
+      <span class="tag">${esc(sel.projeto||"—")}</span>
+      ${sel.componente?`<span class="tag">${esc(sel.componente)}</span>`:""}
+      <span class="tag">dono: ${esc(sel.dono||"—")}</span>
+      <span class="tag">${esc(sel.prioridade||"media")}</span>
+      <span class="tag">atualizado ${esc(sel.atualizadoEm||"—")}</span>
+    </div>
+
+    <div class="campo"><label>Situação</label>
+      <select id="gSit">${SITUACOES.map(s=>
+        `<option value="${s.k}" ${sel.situacao===s.k?"selected":""}>${s.r} (${s.k})</option>`).join("")}</select>
+    </div>
+
+    <div class="campo"><label>O que tinha de ser feito — origem</label>
+      <div class="origem">
+        <strong>${esc(sel.origem?.tipo||"—")}</strong> · <code>${esc(sel.origem?.ref||"sem ref")}</code>
+        ${sel.origem?.citacao?`<div class="cit">“${esc(sel.origem.citacao)}”</div>`:""}
+      </div>
+    </div>
+
+    ${sel.descricao?`<div class="campo"><label>Descrição</label>
+      <div class="md">${md(sel.descricao)}</div></div>`:""}
+
+    <div class="campo"><label>O que foi feito — evidência ${ev.length?`(${ev.length})`:""}</label>
+      ${ev.length ? ev.map((e,n)=>`<div class="ev"><span class="tp">${esc(e.tipo||"?")}</span>
+          <span style="flex:1">${linkEv(e)}</span>
+          <span style="color:var(--muted);font-size:11px">${esc(e.data||"")}</span>
+          <button class="btn fant" style="padding:2px 7px" onclick="window._tiraEv(${n})">✕</button></div>`).join("")
+        : sel.situacao==="feito"
+          ? `<div class="aviso ruim" style="margin:0">Marcado <strong>feito</strong> e sem nenhuma
+             prova. O SCHEMA exige evidência.</div>`
+          : `<div style="color:var(--fraco);font-size:12.5px">nenhuma ainda</div>`}
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <select id="evTipo" style="flex:none;width:118px">
+          <option value="pr">pr</option><option value="commit">commit</option>
+          <option value="documento">documento</option><option value="reuniao">reuniao</option>
+          <option value="tela">tela</option></select>
+        <input id="evRef" placeholder="gobeesiness/gobeejobs-backend#193" style="flex:1;min-width:170px">
+        <button class="btn" id="evAdd">+ prova</button>
+      </div>
+    </div>
+
+    ${(sel.bloqueadoPor||[]).length?`<div class="campo"><label>Bloqueado por</label>
+      <div>${sel.bloqueadoPor.map(b=>`<span class="tag">${esc(b)}</span>`).join(" ")}</div></div>`:""}
+    ${(sel.tags||[]).length?`<div class="campo"><label>Tags</label>
+      <div>${sel.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" ")}</div></div>`:""}
+  `;
+
+  $("#gPe").innerHTML = `
+    <button class="btn pri" id="gConcluir">✓ Concluir</button>
+    <button class="btn" id="gEditar">Editar</button>
+    <div class="espaco"></div>
+    <button class="btn" id="gExcluir" style="color:var(--erro)">Excluir</button>`;
+
+  $("#gSit").onchange = e => {
+    const nova = e.target.value;
+    if(nova==="feito" && !(sel.evidencia||[]).length){
+      brinde("para marcar feito, junte pelo menos uma prova", true);
+      e.target.value = sel.situacao; return;
+    }
+    sel.situacao=nova; sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id);
+  };
+  $("#evAdd").onclick = ()=>{
+    const ref=$("#evRef").value.trim(); if(!ref) return;
+    (sel.evidencia ||= []).push({tipo:$("#evTipo").value, ref, data:hoje()});
+    sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id);
+  };
+  $("#gConcluir").onclick = ()=>{
+    if(!(sel.evidencia||[]).length){
+      brinde("concluir exige prova — adicione o PR, commit ou documento", true);
+      $("#evRef").focus(); return;
+    }
+    sel.situacao="feito"; sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id); brinde("concluído");
+  };
+  $("#gEditar").onclick = ()=>editar(sel);
+  $("#gExcluir").onclick = ()=>{
+    if(!confirm(`Excluir ${sel.id}?\n\nFila não é histórico — item cumprido some daqui e o rastro `+
+                `fica no PR/CHANGELOG. Mas se ainda não foi feito, você perde o registro do pedido.`)) return;
+    dados.itens = dados.itens.filter(i=>i.id!==sel.id); fechar(); mexeu();
+  };
+  window._tiraEv = n => { sel.evidencia.splice(n,1); sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id); };
+
+  $("#gaveta").classList.add("on"); $("#gaveta").setAttribute("aria-hidden","false");
+  $("#fundo").classList.add("on");
+}
+
+function fechar(){
+  $("#gaveta").classList.remove("on"); $("#gaveta").setAttribute("aria-hidden","true");
+  $("#fundo").classList.remove("on"); sel=null;
+}
+
+function editar(it){
+  const novo = !it;
+  it = it || {id:"", projeto:"", componente:"", titulo:"", descricao:"", situacao:"aberto",
+              origem:{tipo:"mesa",ref:"",citacao:""}, evidencia:[], dono:"arquiteto",
+              prioridade:"media", bloqueadoPor:[], tags:[], atualizadoEm:hoje()};
+  $("#gId").textContent = novo ? "nova tarefa" : "editando "+it.id;
+  const op=(v,sel)=>`<option ${v===sel?"selected":""}>${esc(v)}</option>`;
+  $("#gCorpo").innerHTML = `
+    <div class="dupla">
+      <div class="campo"><label>Id ${novo?"— estável, nunca reciclado":""}</label>
+        <input id="eId" value="${esc(it.id)}" ${novo?"":"disabled"} placeholder="JOBS-BACK-042"></div>
+      <div class="campo"><label>Projeto</label>
+        <input id="eProj" value="${esc(it.projeto)}" list="lProj" placeholder="gobee-jobs">
+        <datalist id="lProj">${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean)
+          .map(p=>`<option>${esc(p)}</option>`).join("")}</datalist></div>
+    </div>
+    <div class="campo"><label>Título — uma linha, sem ponto final</label>
+      <input id="eTit" value="${esc(it.titulo)}"></div>
+    <div class="dupla">
+      <div class="campo"><label>Componente</label><select id="eComp">
+        <option value=""></option>${COMPONENTES.map(c=>op(c,it.componente)).join("")}</select></div>
+      <div class="campo"><label>Dono</label><select id="eDono">
+        ${DONOS.map(d=>op(d,it.dono)).join("")}</select></div>
+    </div>
+    <div class="dupla">
+      <div class="campo"><label>Situação</label><select id="eSit">
+        ${SITUACOES.map(s=>`<option value="${s.k}" ${it.situacao===s.k?"selected":""}>${s.r}</option>`).join("")}</select></div>
+      <div class="campo"><label>Prioridade</label><select id="ePrio">
+        ${["alta","media","baixa"].map(p=>op(p,it.prioridade)).join("")}</select></div>
+    </div>
+    <div class="campo"><label>Origem — quem pediu, e onde isso está registrado</label>
+      <div class="dupla">
+        <select id="eOTipo">${["reuniao","documento","pr","mesa","incidente","codigo"]
+          .map(t=>op(t,it.origem?.tipo)).join("")}</select>
+        <input id="eORef" value="${esc(it.origem?.ref||"")}" placeholder="2026-07-16 · docs/x.md · #193">
+      </div>
+      <input id="eOCit" value="${esc(it.origem?.citacao||"")}" placeholder="citação literal curta, se houver"
+        style="margin-top:8px"></div>
+    <div class="campo"><label>Descrição — markdown simples</label>
+      <textarea id="eDesc">${esc(it.descricao||"")}</textarea></div>
+    <div class="dupla">
+      <div class="campo"><label>Bloqueado por — ids, vírgula</label>
+        <input id="eBloq" value="${esc((it.bloqueadoPor||[]).join(", "))}" placeholder="C-1"></div>
+      <div class="campo"><label>Tags — vírgula</label>
+        <input id="eTags" value="${esc((it.tags||[]).join(", "))}"></div>
+    </div>`;
+  $("#gPe").innerHTML = `<button class="btn pri" id="eSalvar">Guardar</button>
+    <button class="btn" id="eCancelar">Cancelar</button>
+    <div class="espaco"></div>
+    <span style="font-size:11.5px;color:var(--muted)">guardar não commita — use “Salvar no git”</span>`;
+
+  $("#eCancelar").onclick = ()=> novo ? fechar() : abrir(it.id);
+  $("#eSalvar").onclick = ()=>{
+    const id = novo ? $("#eId").value.trim() : it.id;
+    if(!id) return brinde("id é obrigatório — e ele é estável",true);
+    if(novo && dados.itens.some(i=>i.id===id)) return brinde("esse id já existe",true);
+    const tit=$("#eTit").value.trim(); if(!tit) return brinde("título é obrigatório",true);
+    const ref=$("#eORef").value.trim(); if(!ref)
+      return brinde("origem é obrigatória — sem ela o item é palpite",true);
+    const sit=$("#eSit").value;
+    if(sit==="feito" && !(it.evidencia||[]).length)
+      return brinde("feito exige evidência — guarde como aberto e junte a prova",true);
+
+    Object.assign(it,{
+      id, projeto:$("#eProj").value.trim(), componente:$("#eComp").value,
+      titulo:tit, descricao:$("#eDesc").value, situacao:sit,
+      origem:{tipo:$("#eOTipo").value, ref, citacao:$("#eOCit").value.trim()},
+      dono:$("#eDono").value, prioridade:$("#ePrio").value,
+      bloqueadoPor:$("#eBloq").value.split(",").map(s=>s.trim()).filter(Boolean),
+      tags:$("#eTags").value.split(",").map(s=>s.trim()).filter(Boolean),
+      atualizadoEm:hoje(), evidencia: it.evidencia||[]
+    });
+    if(novo) dados.itens.push(it);
+    mexeu(); abrir(it.id); brinde(novo?"tarefa criada":"guardado");
+  };
+  $("#gaveta").classList.add("on"); $("#fundo").classList.add("on");
+}
+
+/* ═══ Ligações ═══ */
+function entrar(){
+  $("#capa").classList.add("oculto");
+  ["#topo","#filtros","#main"].forEach(s=>$(s).classList.remove("oculto"));
+  render();
+}
+
+$("#conectar").onclick = async ()=>{
+  const t=$("#tok").value.trim();
+  if(!t) return brinde("cole o token, ou abra um .json do disco",true);
+  token=t;
+  if($("#lembrar").checked) try{ localStorage.setItem("gb_tok",t); }catch(e){}
+  await carregar();
+};
+$("#tok").onkeydown = e => { if(e.key==="Enter") $("#conectar").click(); };
+$("#abrirArquivo").onclick = ()=>$("#arq").click();
+$("#arq").onchange = e =>{
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload = ()=>{
+    try{
+      const j=JSON.parse(fr.result);
+      if(!Array.isArray(j.itens)) throw new Error("sem a chave `itens`");
+      dados=j; modo="leitura"; sha=null; base=new Map(); sujo=false; entrar();
+      brinde(`${j.itens.length} itens — modo leitura, não salva em git`);
+    }catch(err){ brinde("json inválido: "+err.message,true); }
+  };
+  fr.readAsText(f,"utf-8");
+};
+
+$("#salvar").onclick = salvar;
+$("#novo").onclick = ()=>editar(null);
+$("#recarregar").onclick = ()=>{
+  if(sujo && !confirm("Você tem mudança não salva. Reler do git descarta. Continuar?")) return;
+  carregar();
+};
+$("#baixar").onclick = ()=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(dados,null,2)+"\n"],{type:"application/json"}));
+  a.download="tarefas.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+$("#tema").onclick = ()=>{
+  const d=document.documentElement.dataset.theme==="dark"?"light":"dark";
+  document.documentElement.dataset.theme=d;
+  try{ localStorage.setItem("gb_tema",d); }catch(e){}
+};
+$("#fechar").onclick = fechar;
+$("#fundo").onclick = fechar;
+document.onkeydown = e =>{
+  if(e.key==="Escape") fechar();
+  if((e.ctrlKey||e.metaKey) && e.key==="s"){ e.preventDefault(); if(sujo) salvar(); }
+  if(e.key==="/" && document.activeElement.tagName!=="INPUT"
+     && document.activeElement.tagName!=="TEXTAREA"){ e.preventDefault(); $("#busca").focus(); }
+};
+let tBusca;
+$("#busca").oninput = e =>{ clearTimeout(tBusca);
+  tBusca=setTimeout(()=>{ filtro.q=e.target.value.trim(); render(); },160); };
+$("#fDono").onchange = e =>{ filtro.dono=e.target.value; render(); };
+$("#fComp").onchange = e =>{ filtro.componente=e.target.value; render(); };
+$("#fAlta").onclick = ()=>{ filtro.alta=!filtro.alta; render(); };
+$("#fSemProva").onclick = ()=>{ filtro.semProva=!filtro.semProva; render(); };
+$("#limpar").onclick = ()=>{
+  Object.assign(filtro,{q:"",projeto:"",dono:"",componente:"",alta:false,semProva:false});
+  $("#busca").value=""; $("#fDono").value=""; $("#fComp").value=""; render();
+};
+window.onbeforeunload = e =>{ if(sujo){ e.preventDefault(); return e.returnValue="há mudança não salva"; } };
+
+/* ── abertura ── */
+try{
+  const t=localStorage.getItem("gb_tema"); if(t) document.documentElement.dataset.theme=t;
+  const k=localStorage.getItem("gb_tok");
+  if(k){ $("#tok").value=k; $("#lembrar").checked=true; token=k; carregar(); }
+}catch(e){}
+</script>
+</body>
+</html>
