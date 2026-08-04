@@ -151,9 +151,30 @@ main{padding:18px}
       <code>go-beesiness-regras/dados/tarefas.json</code>, em git. Se esta app sumir, o dado continua lá.</p>
 
     <div class="campo">
-      <label>Token do GitHub — precisa de escopo <code>repo</code></label>
+      <label>Token do GitHub — o repositório é <strong>privado</strong>, então ele é obrigatório</label>
       <input type="password" id="tok" placeholder="github_pat_… ou ghp_…" autocomplete="off">
     </div>
+    <details style="margin:-6px 0 14px;font-size:11.5px;line-height:1.65">
+      <summary style="cursor:pointer;color:var(--mel-600);font-weight:600">Qual token criar</summary>
+      <p style="margin:8px 0 0">
+        <strong>Preferido — fine-grained</strong> (<em>Settings → Developer settings → Personal access
+        tokens → Fine-grained</em>): <em>Resource owner</em> <code>gobeesiness</code>,
+        <em>Only select repositories</em> → <code>go-beesiness-regras</code>,
+        e uma única permissão — <em>Repository permissions → Contents → Read and write</em>.
+        Ponha validade; token que não vence é token que ninguém revoga.
+      </p>
+      <p style="margin:8px 0 0">
+        ⚠️ <strong>Fine-grained em repositório de organização precisa do aval de um
+        <em>owner</em>.</strong> Enquanto o pedido estiver pendente o token existe e
+        <strong>não funciona</strong> — e o GitHub responde <code>404</code>, o mesmo código de
+        “não existe”. Esta tela agora distingue os dois e diz qual é.
+      </p>
+      <p style="margin:8px 0 0">
+        <strong>Alternativa que funciona sem aval — clássico</strong>, escopo <code>repo</code>.
+        Destrava na hora, mas <code>repo</code> é <strong>escrita em todos os repositórios da
+        organização</strong>. Use só até o fine-grained ser aprovado, e com validade curta.
+      </p>
+    </details>
     <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:16px;color:var(--muted)">
       <input type="checkbox" id="lembrar" style="width:auto">
       Lembrar neste navegador
@@ -165,8 +186,9 @@ main{padding:18px}
       <input type="file" id="arq" accept=".json,application/json" class="oculto">
     </div>
     <p style="margin:15px 0 0;font-size:11.5px;line-height:1.6">
-      Sem token, ela abre <strong>só para leitura</strong>. ⚠️ Se marcar “lembrar”, ele fica no
-      <code>localStorage</code> desta máquina.
+      Sem token ela <strong>não carrega o backlog</strong> — o repositório é privado. O botão do
+      disco existe só para abrir um <code>.json</code> que você já tenha; ele <strong>não</strong>
+      fala com o git. ⚠️ Se marcar “lembrar”, ele fica no <code>localStorage</code> desta máquina.
     </p>
   </div>
 </div>
@@ -176,6 +198,7 @@ main{padding:18px}
   <div class="marca"><span class="abelha">🐝</span> Fila única</div>
   <span class="pill" id="pillFonte">—</span>
   <span class="pill" id="pillTotal">—</span>
+  <span class="pill" id="pillVivo" title="confere o git a cada 60 s, e ao voltar para esta aba">—</span>
   <div class="espaco"></div>
   <button class="btn fant" id="tema" title="Tema claro/escuro">◐</button>
   <button class="btn fant" id="baixar" title="Baixar o JSON">↓ JSON</button>
@@ -247,6 +270,10 @@ let base   = new Map();     // id -> impressao do item COMO ELE ESTAVA quando li
 let token  = null;
 let sujo   = false;         // há mudança não salva
 let modo   = "leitura";     // leitura | github
+let etag   = null;          // = sha do blob. Vai no If-None-Match e faz o giro custar 304
+let vigia  = null;          // handle do setInterval, para não ligar dois
+let conferindo = false;     // um giro por vez — aba lenta não empilha requisição
+let visto  = 0;             // quando o git foi conferido pela última vez
 let sel    = null;          // item aberto na gaveta
 const filtro = {q:"", projeto:"", dono:"", componente:"", alta:false, semProva:false};
 
@@ -385,21 +412,112 @@ async function gh(caminho, opcoes={}){
   return r.json();
 }
 
-async function carregar(){
+/* ── Por que um 404 precisa de segunda pergunta ─────────────────────────────
+   A API de conteúdos responde 404 em DOIS casos que nada têm a ver:
+     (a) o arquivo não existe;
+     (b) o token não enxerga o repositório — porque é inválido para ele, porque
+         não tem a permissão, ou porque é fine-grained com o pedido PENDENTE de
+         aprovação de um owner da organização.
+   O GitHub usa 404 no caso (b) de propósito, para não revelar que o repo existe.
+   Medido em 04/08: sem token nenhum, este mesmo endpoint devolve 404 com corpo
+   IDÊNTICO ao de arquivo ausente. Token inválido devolve 401 — esse dá para
+   distinguir sozinho; o 404 não.
+
+   A tela antiga tratava todo 404 como (a): entrava em modo git com a fila VAZIA
+   e dizia "o primeiro salvamento cria". Quem colava um token pendente de
+   aprovação via 626 itens virarem zero e um convite a gravar por cima.
+   Agora ela pergunta ao /repos antes de concluir qualquer coisa. ───────────── */
+async function porQueNaoAchou(){
+  try{
+    await gh(`/repos/${REPO}`);
+    return {ausente:true};                      // o repo aparece → o arquivo é que não está lá
+  }catch(e){
+    const s = String(e);
+    if(s.includes("401")) return {ausente:false, msg:
+      "token inválido ou expirado — o GitHub recusou a credencial (401). Gere outro."};
+    if(s.includes("403")) return {ausente:false, msg:
+      "token válido, mas sem permissão (403). Ele precisa de Contents no go-beesiness-regras."};
+    return {ausente:false, msg:
+      "este token NÃO enxerga o go-beesiness-regras. Ou não tem permissão, ou é fine-grained " +
+      "com o pedido ainda PENDENTE de aprovação de um owner da organização — nesse estado o " +
+      "token existe e não funciona. Nada foi lido; a fila não está vazia."};
+  }
+}
+
+async function carregar({silencioso=false}={}){
   try{
     const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
-    sha = j.sha;
+    sha = j.sha; etag = j.sha;
     dados = JSON.parse(await conteudoDe(j));
     if(!Array.isArray(dados.itens)) throw new Error("o JSON não tem a chave `itens`");
     base = new Map(dados.itens.map(i=>[i.id, impressao(i)]));   // o ancestral da fusão
-    modo="github"; sujo=false;
-    entrar(); brinde(`${dados.itens.length} itens lidos do git`);
+    modo="github"; sujo=false; visto=Date.now();
+    entrar(); vigiar();
+    brinde(`${dados.itens.length} itens ${silencioso?"— atualizado do git":"lidos do git"}`);
   }catch(e){
     if(String(e).includes("404")){
-      dados={versao:1, geradoEm:hoje(), itens:[]}; sha=null; base=new Map(); modo="github"; sujo=false;
-      entrar(); brinde("dados/tarefas.json ainda não existe — o primeiro salvamento cria",true);
+      const d = await porQueNaoAchou();
+      if(d.ausente){
+        dados={versao:1, geradoEm:hoje(), itens:[]}; sha=null; etag=null; base=new Map();
+        modo="github"; sujo=false; visto=Date.now();
+        entrar(); vigiar();
+        brinde("dados/tarefas.json ainda não existe neste repo — o primeiro salvamento cria",true);
+      } else {
+        // 🔴 NÃO entra em modo git, NÃO zera a fila, NÃO convida a gravar.
+        brinde(d.msg, true);
+      }
     } else { brinde("falhou ao ler: "+e.message, true); }
   }
+}
+
+/* ── A tela é VIVA: ela olha o online sozinha ────────────────────────────────
+   Requisito do CTO (04/08): "sempre terá que olhar para o online e sempre se
+   atualizar". O custo é quase zero e foi medido: o arquivo passou de 1 MiB, então
+   a API de conteúdos devolve só metadado — 955 bytes — e o ETag É o sha do blob.
+   Com If-None-Match a resposta vira 304, que nem consome cota de rate limit.
+
+   Duas travas:
+     · nunca recarrega por cima de mudança não salva — avisa e deixa a decisão;
+     · pausa quando a aba não está visível, e confere ao voltar. ─────────────── */
+const INTERVALO = 60000;
+function vigiar(){
+  if(vigia) return;
+  vigia = setInterval(conferirOnline, INTERVALO);
+  setInterval(pulso, 15000);        // só repinta o selo; não fala com a rede
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) conferirOnline(); });
+  window.addEventListener("online", conferirOnline);
+  pulso();
+}
+async function conferirOnline(){
+  if(modo!=="github" || !token || document.hidden || conferindo) return;
+  conferindo = true;
+  try{
+    const r = await fetch(API+`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`,{
+      headers:{ "Accept":"application/vnd.github+json",
+                "X-GitHub-Api-Version":"2022-11-28",
+                "Authorization":"Bearer "+token,
+                ...(etag?{"If-None-Match":`"${etag}"`}:{}) }});
+    visto = Date.now();
+    if(r.status===304){ pulso(); return; }        // nada mudou — o caso comum, e é de graça
+    if(!r.ok) return;                             // silêncio: falha de rede não vira alarme
+    const j = await r.json();
+    if(j.sha === sha){ etag=j.sha; pulso(); return; }
+    if(sujo){
+      etag = null;                                 // não silencia: pergunta de novo no próximo giro
+      brinde("o git andou e você tem mudança não salva — salve (a fusão preserva os dois lados) "+
+             "ou recarregue com ↻", true);
+      return;
+    }
+    await carregar({silencioso:true});
+  }catch(e){ /* offline ou rede instável: o próximo giro tenta de novo */ }
+  finally{ conferindo=false; pulso(); }
+}
+function pulso(){
+  const p=$("#pillVivo"); if(!p) return;
+  const s = Math.round((Date.now()-visto)/1000);
+  p.textContent = modo!=="github" ? "—"
+    : s<90 ? "🟢 ao vivo" : `🟡 última conferência há ${Math.round(s/60)} min`;
+  p.title = "confere o git a cada 60 s, e ao voltar para esta aba";
 }
 
 async function salvar(){
@@ -444,6 +562,8 @@ async function salvar(){
           })
         });
         sha = r.content.sha;
+        etag = r.content.sha; visto = Date.now(); pulso();   // o vigia não pode ver o MEU commit
+                                                            // como "o git andou" e recarregar
         base = new Map(dados.itens.map(i=>[i.id, impressao(i)]));  // nova linha de base
         sujo=false; brinde("salvo no git"+nota);
         return;
