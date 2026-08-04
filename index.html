@@ -980,19 +980,29 @@ function editar(it){
   $("#gCorpo").innerHTML = `
     <div class="dupla">
       <div class="campo"><label>Projeto</label>
-        <input id="eProj" value="${esc(it.projeto)}" list="lProj" placeholder="gobee-jobs">
-        <datalist id="lProj">${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean).sort()
-          .map(p=>`<option>${esc(p)}</option>`).join("")}</datalist></div>
-      <div class="campo"><label>Família ${novo?"":"— do id existente"}</label>
+        <!-- 🔴 Era <input list="lProj">. O datalist do navegador FILTRA pelo que
+             está digitado, então, com um projeto já escolhido, abrir a lista
+             mostrava só ele — e só voltava tudo apagando o campo. Relatado pelo
+             CTO em 04/08. `<select>` mostra sempre a lista inteira; projeto novo
+             tem entrada própria. -->
+        <select id="eProj">
+          <option value="">— escolha —</option>
+          ${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean).sort()
+            .map(p=>`<option ${p===it.projeto?"selected":""}>${esc(p)}</option>`).join("")}
+          <option value="__outro__">— outro (escrever) —</option>
+        </select>
+        <input id="eProjNovo" class="oculto" placeholder="nome do projeto novo" style="margin-top:8px"></div>
+      <div class="campo"><label>Família ${novo?"— a do id":"— do id existente"}</label>
         <select id="ePre" ${novo?"":"disabled"}></select></div>
     </div>
     <div class="campo">
-      <label>Id ${novo?"— gerado do projeto · estável, nunca reciclado":"— não se muda"}</label>
+      <label>Id ${novo?"— sai pronto do projeto acima; você não precisa escrever"
+                       :"— não se muda: id é estável e nunca reciclado"}</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input id="eId" value="${esc(it.id)}" ${novo?"readonly":"disabled"}
-               placeholder="escolha o projeto" style="flex:1;font-family:var(--mono)">
+               placeholder="escolha o projeto acima" style="flex:1;font-family:var(--mono)">
         ${novo?`<button type="button" class="btn fant" id="eIdLivre"
-               title="só para caso excepcional — o número seguinte já foi calculado">editar à mão</button>`:""}
+               title="caso excepcional — o número seguinte já foi calculado">editar à mão</button>`:""}
       </div>
       ${novo?`<p style="margin:6px 0 0;font-size:11px;color:var(--muted)" id="eIdNota"></p>`:""}
     </div>
@@ -1025,46 +1035,74 @@ function editar(it){
         <input id="eBloq" value="${esc((it.bloqueadoPor||[]).join(", "))}" placeholder="C-1"></div>
       <div class="campo"><label>Tags — vírgula</label>
         <input id="eTags" value="${esc((it.tags||[]).join(", "))}"></div>
-    </div>`;
+    </div>
+    <!-- O anexo mora na gaveta de LEITURA, nao aqui: a imagem vai para a pasta
+         dados/anexos do item, e antes de Guardar o item ainda nao tem id. Sem
+         este aviso a pessoa procura o bloco na criacao e conclui que ele nao
+         existe - foi exatamente o que aconteceu com o CTO em 04/08.
+         (Sem crase neste comentario: ele vive DENTRO de um template literal, e
+         crase aqui encerra a string. Ja quebrou uma vez.) -->
+    <p style="margin:2px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6">
+      📎 <strong>Print de tela e texto de console</strong> se anexam com o item aberto, no bloco
+      <strong>“Anexar”</strong> — não aqui. ${novo
+        ? "Clique em <strong>Guardar</strong> e a tela abre o item já nele: o anexo precisa do id, que só existe depois de criado."
+        : "Feche esta edição e o bloco está logo abaixo da evidência."}
+    </p>`;
   $("#gPe").innerHTML = `<button class="btn pri" id="eSalvar">Guardar</button>
     <button class="btn" id="eCancelar">Cancelar</button>
     <div class="espaco"></div>
     <span style="font-size:11.5px;color:var(--muted)">guardar não commita — use “Salvar no git”</span>`;
 
   /* ── projeto → família → id, recalculado a cada troca ────────────────────── */
+  /* 🔴 `idNaMao` só é ligado pelo BOTÃO. A primeira versão o ligava também no
+     ramo "projeto sem família", e como `encheFamilias()` roda ao abrir — com o
+     projeto ainda vazio — ele travava ANTES de a pessoa digitar qualquer coisa.
+     Resultado medido no navegador em 04/08: escolher `gobee-jobs` achava a
+     família `JOBS-BACK` certinho e o id continuava vazio, para sempre. A geração
+     nunca funcionou. Estado que se liga sozinho e não se desliga é armadilha. */
   let idNaMao = false;
+
+  const projetoAtual = () =>
+    ($("#eProj").value === "__outro__" ? $("#eProjNovo").value : $("#eProj").value).trim();
+
   function encheFamilias(){
-    const proj = $("#eProj").value.trim();
-    const pres = prefixosDe(proj);
-    const sel  = $("#ePre");
+    const sel = $("#ePre");
     if(!novo){                                    // editando: mostra a do id, e só
       sel.innerHTML = `<option>${esc(it.id.replace(/-\d+$/,""))}</option>`; return;
     }
+    $("#eProjNovo").classList.toggle("oculto", $("#eProj").value !== "__outro__");
+    const pres = prefixosDe(projetoAtual());
     sel.innerHTML = pres.length
       ? pres.map(p=>`<option>${esc(p)}</option>`).join("")
-      : `<option value="">— projeto novo: escreva o id à mão —</option>`;
+      : `<option value="">— sem família conhecida —</option>`;
     geraId();
   }
+
   function geraId(){
-    if(!novo || idNaMao) return;
-    const pre = $("#ePre").value;
-    const gerado = proximoId(pre);
-    $("#eId").value = gerado;
+    if(!novo || idNaMao) return;                  // o humano assumiu: não sobrescreve
+    const pre  = $("#ePre").value;
     const nota = $("#eIdNota");
-    if(!nota) return;
     if(!pre){
-      nota.textContent = "Nenhuma família conhecida para este projeto — o id tem de ser escrito à mão.";
-      $("#eId").readOnly = false; idNaMao = true;
-    } else {
+      $("#eId").value = "";
+      $("#eId").readOnly = false;                 // dá para escrever, MAS não trava a geração
+      if(nota) nota.textContent = projetoAtual()
+        ? "Este projeto ainda não tem família de id — escreva o id à mão, ou escolha outro projeto."
+        : "Escolha o projeto acima e o id aparece aqui, pronto.";
+      return;
+    }
+    $("#eId").readOnly = true;                    // volta a ser gerado quando há família
+    $("#eId").value = proximoId(pre);
+    if(nota){
       const n = dados.itens.filter(i=>i.id.startsWith(pre+"-")).length;
       nota.textContent = `${n} item${n===1?"":"s"} já usa${n===1?"":"m"} ${pre}. `+
                          `O número é o maior + 1 — id não se recicla.`;
     }
   }
+
   if(novo){
-    $("#eProj").oninput  = encheFamilias;
-    $("#eProj").onchange = encheFamilias;
-    $("#ePre").onchange  = geraId;
+    $("#eProj").onchange     = encheFamilias;
+    $("#eProjNovo").oninput  = encheFamilias;
+    $("#ePre").onchange      = geraId;
     $("#eIdLivre").onclick = ()=>{
       idNaMao = true; $("#eId").readOnly = false; $("#eId").focus();
       $("#eIdNota").textContent = "Id à mão. Confira que ele não existe e que segue a família do projeto.";
@@ -1085,7 +1123,7 @@ function editar(it){
       return brinde("feito exige evidência — guarde como aberto e junte a prova",true);
 
     Object.assign(it,{
-      id, projeto:$("#eProj").value.trim(), componente:$("#eComp").value,
+      id, projeto:projetoAtual(), componente:$("#eComp").value,
       titulo:tit, descricao:$("#eDesc").value, situacao:sit,
       origem:{tipo:$("#eOTipo").value, ref, citacao:$("#eOCit").value.trim()},
       dono:$("#eDono").value, prioridade:$("#ePrio").value,
