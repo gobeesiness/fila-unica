@@ -351,6 +351,26 @@ function fundir(remotos, meus, base){
 window.__fundir = fundir; window.__impressao = impressao;
 
 /* ═══ GitHub ═══ */
+
+/* A Contents API so devolve `content` inline ate 1 MiB. Acima disso ela responde
+   200 com `encoding:"none"` e `content` VAZIO -- e o JSON.parse("") vira
+   "unexpected end of JSON input", que nao diz nada sobre a causa.
+
+   Medido em 03/08/2026: o `dados/tarefas.json` passou de 1 MiB em 02/08 (commit
+   81809dc8, 1.044.489 -> 1.055.777 bytes) e a tela parou de abrir. Ninguem viu,
+   porque a app nunca tinha sido usada para salvar -- nao ha um commit "pela app"
+   em toda a historia do repo.
+
+   A Blobs API entrega o MESMO blob, pelo mesmo sha, ate 100 MB. A escrita nao
+   precisa de nada: o PUT da Contents API foi testado com 1,3 MB e passou. */
+async function conteudoDe(j){
+  if(j.content && j.encoding !== "none") return b64ParaTexto(j.content);
+  const b = await gh(`/repos/${REPO}/git/blobs/${j.sha}`);
+  if(!b.content) throw new Error(
+    `arquivo de ${(j.size/1048576).toFixed(1)} MB — nem a Blobs API devolveu conteúdo`);
+  return b64ParaTexto(b.content);
+}
+
 async function gh(caminho, opcoes={}){
   const r = await fetch(API+caminho, {...opcoes, headers:{
     "Accept":"application/vnd.github+json",
@@ -369,7 +389,7 @@ async function carregar(){
   try{
     const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
     sha = j.sha;
-    dados = JSON.parse(b64ParaTexto(j.content));
+    dados = JSON.parse(await conteudoDe(j));
     if(!Array.isArray(dados.itens)) throw new Error("o JSON não tem a chave `itens`");
     base = new Map(dados.itens.map(i=>[i.id, impressao(i)]));   // o ancestral da fusão
     modo="github"; sujo=false;
@@ -391,7 +411,7 @@ async function salvar(){
       let remoto=null, shaAtual=null;
       try{
         const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
-        shaAtual = j.sha; remoto = JSON.parse(b64ParaTexto(j.content));
+        shaAtual = j.sha; remoto = JSON.parse(await conteudoDe(j));
       }catch(e){ if(!String(e).includes("404")) throw e; }
 
       let nota = "";
