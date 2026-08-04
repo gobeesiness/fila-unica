@@ -138,6 +138,17 @@ main{padding:18px}
   line-height:1.6;background:var(--mel-soft);border:1px solid var(--mel-borda);color:var(--tinta)}
 .avisoEscopo.ruim{background:var(--azul-soft);border-color:var(--erro);color:var(--erro)}
 .avisoEscopo code{font-family:var(--mono);font-size:10.5px}
+/* área de colar anexo */
+.zonaCola{border:1.5px dashed var(--borda);border-radius:var(--r);padding:14px 13px;
+  font-size:12px;line-height:1.6;color:var(--muted);background:var(--card);cursor:text;
+  transition:border-color .12s,background .12s}
+.zonaCola:hover{border-color:var(--mel-600)}
+.zonaCola:focus{outline:none;border-color:var(--mel-600);background:var(--mel-soft);color:var(--tinta)}
+.rodape .tag.data{font-variant-numeric:tabular-nums}
+/* bloco cercado dentro da descrição — saída de console tem de sair crua e rolar */
+.md pre{background:var(--bg);border:1px solid var(--borda);border-radius:8px;padding:10px 12px;
+  overflow-x:auto;margin:10px 0}
+.md pre code{font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre;color:var(--tinta)}
 @media(max-width:640px){
   .quadro{grid-template-columns:1fr}.dupla{grid-template-columns:1fr}
   .lista{max-height:none}main{padding:12px}
@@ -272,8 +283,38 @@ const SITUACOES = [
   {k:"feito",     r:"Foi feito",      c:"#2e9e5b"},
   {k:"descartado",r:"Descartado",     c:"#97878c"},
 ];
-const DONOS = ["cto","arquiteto","equipe-jobs","equipe-mensageria","equipe-hive","terceiro"];
+/* ── Donos ───────────────────────────────────────────────────────────────────
+   🔴 Esta lista estava INCOMPLETA e isso corrompia dado em silêncio. Medido em
+   04/08: 52 dos 629 itens tinham dono que o `<select>` nem oferecia
+   (`equipe-queen`, `equipe-propolis`, `equipe-zap`, `equipe-financeiro`,
+   `equipe-leads`). Quando nenhuma `<option>` casa, o select cai na PRIMEIRA — e
+   salvar reatribuía o item para `cto` sem avisar ninguém.
+
+   Duas travas agora: a lista canônica cobre todos os donos em uso, e
+   `opcoesDono()` acrescenta o dono do item se ele ainda assim não estiver aqui.
+   Lista de opções nunca pode ser mais estreita que o dado que ela edita.
+
+   `c-level` entrou por decisão do CTO em 04/08. Ele espelha o papel `C_LEVEL` da
+   RN-029 — a diretoria, que confirma operação crítica em dupla verificação. ── */
+const DONOS = ["cto","c-level","arquiteto","equipe-jobs","equipe-mensageria",
+               "equipe-hive","equipe-financeiro","equipe-queen","equipe-propolis",
+               "equipe-zap","equipe-leads","terceiro"];
 const COMPONENTES = ["backend","frontend","reportgenerator","infra","docs","produto"];
+
+/* Famílias de id que NÃO servem para item novo: nasceram de importação
+   (a planilha, o histórico, os lotes) ou são código antigo de campanha. Sugerir
+   `HIST-060` para uma tarefa de hoje misturaria acervo com trabalho. */
+const PREFIXOS_LEGADOS = new Set(["PLAN","HIST","LOTE","C","E","A","Q"]);
+
+/* ── Datas ───────────────────────────────────────────────────────────────────
+   O arquivo guarda ISO (`2026-08-04`) — é o formato de 629 de 629 itens, e é o
+   que ordena certo. A TELA mostra dia/mês/ano, que é como se lê aqui.
+   Guardar num formato e exibir noutro é o mesmo princípio do `RT-004` (persistir
+   em UTC, exibir no fuso local). ─────────────────────────────────────────────*/
+const fmtData = s => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||""));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (s||"—");
+};
 
 let dados  = {versao:1, geradoEm:"", itens:[]};
 let sha    = null;          // sha do blob lido — a trava contra sobrescrever outra sessão
@@ -296,6 +337,43 @@ const esc = s => String(s??"").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const hoje = () => new Date().toISOString().slice(0,10);
 
+/* Nunca ofereça menos opções do que o dado já tem. Ver a nota em DONOS. */
+function opcoesDono(atual){
+  const l = [...DONOS];
+  if(atual && !l.includes(atual)) l.push(atual);      // dono desconhecido não some
+  return l;
+}
+
+/* ── Id automático a partir do projeto ───────────────────────────────────────
+   O prefixo NÃO é derivado do nome do projeto — é lido do que já existe na fila.
+   Foi medido em 04/08 e a relação não é 1 para 1: `gobee-jobs` usa JOBS-BACK,
+   JOBS-FRONT, JOBS-PROD e JOBS-REPORT. Inventar a regra a partir do nome daria
+   `GOBEE-JOBS-001`, que não existe em lugar nenhum.
+
+   Por isso: os candidatos vêm do dado, ordenados pelo mais usado, sem as
+   famílias de importação. O número é `max + 1` DENTRO do prefixo — nunca
+   `total + 1`, que reciclaria id de item excluído. Id é estável e não se recicla
+   (`dados/README.md`). ────────────────────────────────────────────────────── */
+function prefixosDe(projeto){
+  const c = new Map();
+  for(const i of dados.itens){
+    if(i.projeto !== projeto) continue;
+    const p = i.id.replace(/-\d+$/, "");
+    if(p === i.id || PREFIXOS_LEGADOS.has(p)) continue;   // sem número, ou legado
+    c.set(p, (c.get(p)||0) + 1);
+  }
+  return [...c.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+}
+function proximoId(prefixo){
+  if(!prefixo) return "";
+  let max = 0, larg = 3;
+  for(const i of dados.itens){
+    const m = new RegExp("^"+prefixo.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"-(\\d+)$").exec(i.id);
+    if(m){ max = Math.max(max, +m[1]); larg = Math.max(larg, m[1].length); }
+  }
+  return `${prefixo}-${String(max+1).padStart(larg,"0")}`;
+}
+
 function brinde(msg, ruim){
   const b=$("#brinde"); b.textContent=msg; b.className="brinde on"+(ruim?" ruim":"");
   clearTimeout(b._t); b._t=setTimeout(()=>b.className="brinde",ruim?5200:2600);
@@ -311,12 +389,24 @@ function md(t){
     .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  /* Bloco cercado (```). Entrou em 04/08 junto com o anexo de texto: saída de
+     console colada precisa sair CRUA. Sem isto o `inline` transformaria uma URL
+     do stack trace em link, `**` em negrito, e as próprias crases apareceriam —
+     ou seja, a tela adulteraria a prova que a pessoa acabou de colar. */
+  let cerca=false, buf=[];
   for(const l of linhas){
+    if(/^\s*```/.test(l)){
+      if(cerca){ out+="<pre><code>"+esc(buf.join("\n"))+"</code></pre>"; buf=[]; cerca=false; }
+      else { if(lista){out+="</ul>";lista=false;} cerca=true; }
+      continue;
+    }
+    if(cerca){ buf.push(l); continue; }
     const li = l.match(/^\s*[-*·▸]\s+(.*)$/);
     if(li){ if(!lista){out+="<ul>";lista=true;} out+="<li>"+inline(li[1])+"</li>"; continue; }
     if(lista){out+="</ul>";lista=false;}
     if(l.trim()) out+="<p>"+inline(l)+"</p>";
   }
+  if(cerca) out+="<pre><code>"+esc(buf.join("\n"))+"</code></pre>";   // cerca não fechada
   if(lista) out+="</ul>";
   return out;
 }
@@ -657,6 +747,7 @@ function cartao(i){
     <div class="rodape">
       ${i.componente?`<span class="tag">${esc(i.componente)}</span>`:""}
       <span class="tag">${esc(i.dono||"—")}</span>
+      <span class="tag data" title="atualizado em">${esc(fmtData(i.atualizadoEm))}</span>
       ${i.prioridade==="alta"?'<span class="prio-alta">▲ alta</span>':""}
       ${nEv?`<span>✓ ${nEv} prova${nEv>1?"s":""}</span>`:""}
       ${prova?'<span class="semprova">⚠ sem prova</span>':""}
@@ -688,6 +779,11 @@ function abrir(id){
   $("#gId").textContent = sel.id;
   const ev = (sel.evidencia||[]);
   const linkEv = e => {
+    // anexo: caminho dentro deste repo. Abre no github.com, que usa a sessão do
+    // navegador — não precisa do token da tela nem embutir a imagem no JSON.
+    if(e.tipo==="imagem" && /^dados\/anexos\//.test(String(e.ref||"")))
+      return `<a href="https://github.com/${REPO}/blob/${BRANCH}/${esc(e.ref)}" target="_blank"
+                 rel="noopener">🖼 ${esc(String(e.ref).split("/").pop())}</a>`;
     const m = String(e.ref||"").match(/^([\w.-]+)\/([\w.-]+)#(\d+)$/);
     return m ? `<a href="https://github.com/${m[1]}/${m[2]}/pull/${m[3]}" target="_blank"
                   rel="noopener">${esc(e.ref)}</a>` : esc(e.ref);
@@ -699,7 +795,7 @@ function abrir(id){
       ${sel.componente?`<span class="tag">${esc(sel.componente)}</span>`:""}
       <span class="tag">dono: ${esc(sel.dono||"—")}</span>
       <span class="tag">${esc(sel.prioridade||"media")}</span>
-      <span class="tag">atualizado ${esc(sel.atualizadoEm||"—")}</span>
+      <span class="tag">atualizado ${esc(fmtData(sel.atualizadoEm))}</span>
     </div>
 
     <div class="campo"><label>Situação</label>
@@ -720,7 +816,7 @@ function abrir(id){
     <div class="campo"><label>O que foi feito — evidência ${ev.length?`(${ev.length})`:""}</label>
       ${ev.length ? ev.map((e,n)=>`<div class="ev"><span class="tp">${esc(e.tipo||"?")}</span>
           <span style="flex:1">${linkEv(e)}</span>
-          <span style="color:var(--muted);font-size:11px">${esc(e.data||"")}</span>
+          <span style="color:var(--muted);font-size:11px">${esc(e.data?fmtData(e.data):"")}</span>
           <button class="btn fant" style="padding:2px 7px" onclick="window._tiraEv(${n})">✕</button></div>`).join("")
         : sel.situacao==="feito"
           ? `<div class="aviso ruim" style="margin:0">Marcado <strong>feito</strong> e sem nenhuma
@@ -733,6 +829,23 @@ function abrir(id){
           <option value="tela">tela</option></select>
         <input id="evRef" placeholder="gobeesiness/gobeejobs-backend#193" style="flex:1;min-width:170px">
         <button class="btn" id="evAdd">+ prova</button>
+      </div>
+    </div>
+
+    <div class="campo"><label>Anexar — print de tela ou saída de console</label>
+      <div id="zonaCola" class="zonaCola" tabindex="0">
+        Clique aqui e <strong>cole (Ctrl+V)</strong> — imagem vira arquivo no git, texto vira bloco
+        na descrição. Ou <button type="button" class="btn fant" id="anexEscolher"
+        style="padding:2px 8px">escolher imagem</button>
+      </div>
+      <input type="file" id="anexArq" accept="image/*" class="oculto">
+      <textarea id="colaTexto" placeholder="…ou digite/cole o texto aqui — ele entra na descrição como bloco de código, com carimbo de data"
+        style="margin-top:8px;min-height:76px;font-family:var(--mono);font-size:11.5px"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="anexTexto">+ anexar texto</button>
+        <span style="font-size:11px;color:var(--muted)">
+          A imagem vai para <code>dados/anexos/${esc(sel.id)}/</code> num commit próprio —
+          <strong>nunca dentro do <code>tarefas.json</code></strong>, que já tem 1,4 MB.</span>
       </div>
     </div>
 
@@ -760,6 +873,78 @@ function abrir(id){
     const ref=$("#evRef").value.trim(); if(!ref) return;
     (sel.evidencia ||= []).push({tipo:$("#evTipo").value, ref, data:hoje()});
     sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id);
+  };
+
+  /* ── Anexos ──────────────────────────────────────────────────────────────────
+     🔴 A regra de desenho, e ela não é preferência: IMAGEM NUNCA ENTRA NO
+     `tarefas.json`. O arquivo já tem 1,4 MB e passou do teto de 1 MiB da Contents
+     API em 02/08 — foi o que quebrou a tela (`SUITE-021`). Um print de 200 KB
+     vira ~270 KB em base64, e a tela reescreve o arquivo INTEIRO a cada salvar.
+     Meia dúzia de prints dobraria o backlog e tornaria cada gravação mais lenta,
+     para todo mundo.
+
+     Então a imagem vai como ARQUIVO PRÓPRIO em `dados/anexos/<id>/`, num commit
+     separado, e o JSON guarda só o caminho — o mesmo princípio de "o banco guarda
+     a referência, nunca o valor" que o ARIPUÁ usa para segredo.
+
+     Texto é outra história: é barato, é narrativa, e o lugar dele é a descrição.
+     Entra como bloco cercado, com carimbo — assim continua legível no git, na
+     `TAREFAS-ABERTAS.md` gerada e em qualquer leitor de markdown.
+     ────────────────────────────────────────────────────────────────────────── */
+  const TETO_ANEXO = 4 * 1024 * 1024;     // 4 MB: teto da Contents API para PUT
+
+  async function subirImagem(file){
+    if(!file) return;
+    if(!/^image\//.test(file.type)) return brinde("isso não é imagem — para texto use o campo abaixo",true);
+    if(file.size > TETO_ANEXO)
+      return brinde(`imagem de ${(file.size/1048576).toFixed(1)} MB — o teto é 4 MB`,true);
+    if(!token) return brinde("sem token não dá para anexar — a imagem vira um arquivo no git",true);
+
+    const ext  = (file.type.split("/")[1]||"png").replace("jpeg","jpg");
+    const nome = `${hoje()}-${String(Date.now()).slice(-6)}.${ext}`;
+    const cam  = `dados/anexos/${sel.id}/${nome}`;
+    brinde(`enviando ${(file.size/1024).toFixed(0)} KB…`);
+    try{
+      const b64 = await new Promise((ok,err)=>{
+        const fr=new FileReader();
+        fr.onload =()=>ok(String(fr.result).split(",")[1]);   // tira o "data:...;base64,"
+        fr.onerror=()=>err(new Error("não consegui ler o arquivo"));
+        fr.readAsDataURL(file);
+      });
+      await gh(`/repos/${REPO}/contents/${cam}`, { method:"PUT", body: JSON.stringify({
+        message:`anexo(${sel.id}): ${nome} [pela app, ${hoje()}]`, content:b64, branch:BRANCH })});
+      (sel.evidencia ||= []).push({tipo:"imagem", ref:cam, data:hoje()});
+      sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id);
+      brinde("imagem anexada e commitada — falta “Salvar no git” para gravar a referência");
+    }catch(e){ brinde("não anexou: "+e.message, true); }
+  }
+
+  function anexarTexto(txt){
+    const t = String(txt||"").replace(/\s+$/,"");
+    if(!t.trim()) return brinde("nada para anexar",true);
+    const bloco = `\n\n**Colado em ${fmtData(hoje())}**\n\n\`\`\`\n${t}\n\`\`\`\n`;
+    sel.descricao = (sel.descricao||"") + bloco;
+    sel.atualizadoEm = hoje(); mexeu(); abrir(sel.id);
+    brinde("texto anexado à descrição — falta “Salvar no git”");
+  }
+
+  $("#anexEscolher").onclick = ()=> $("#anexArq").click();
+  $("#anexArq").onchange = e =>{ subirImagem(e.target.files[0]); e.target.value=""; };
+  $("#anexTexto").onclick = ()=>{ anexarTexto($("#colaTexto").value); $("#colaTexto").value=""; };
+  $("#zonaCola").onpaste = ev =>{
+    const itens = [...(ev.clipboardData?.items||[])];
+    const img = itens.find(i=>i.kind==="file" && /^image\//.test(i.type));
+    if(img){ ev.preventDefault(); return subirImagem(img.getAsFile()); }
+    const txt = ev.clipboardData?.getData("text");
+    if(txt){ ev.preventDefault(); $("#colaTexto").value =
+      ($("#colaTexto").value ? $("#colaTexto").value+"\n" : "") + txt;
+      $("#colaTexto").focus();
+      brinde("texto na caixa abaixo — confira e clique em “+ anexar texto”"); }
+  };
+  // colar direto na caixa de texto também aceita imagem
+  $("#colaTexto").onpaste = ev =>{
+    const img = [...(ev.clipboardData?.items||[])].find(i=>i.kind==="file" && /^image\//.test(i.type));
+    if(img){ ev.preventDefault(); subirImagem(img.getAsFile()); }
   };
   $("#gConcluir").onclick = ()=>{
     if(!(sel.evidencia||[]).length){
@@ -794,12 +979,22 @@ function editar(it){
   const op=(v,sel)=>`<option ${v===sel?"selected":""}>${esc(v)}</option>`;
   $("#gCorpo").innerHTML = `
     <div class="dupla">
-      <div class="campo"><label>Id ${novo?"— estável, nunca reciclado":""}</label>
-        <input id="eId" value="${esc(it.id)}" ${novo?"":"disabled"} placeholder="JOBS-BACK-042"></div>
       <div class="campo"><label>Projeto</label>
         <input id="eProj" value="${esc(it.projeto)}" list="lProj" placeholder="gobee-jobs">
-        <datalist id="lProj">${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean)
+        <datalist id="lProj">${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean).sort()
           .map(p=>`<option>${esc(p)}</option>`).join("")}</datalist></div>
+      <div class="campo"><label>Família ${novo?"":"— do id existente"}</label>
+        <select id="ePre" ${novo?"":"disabled"}></select></div>
+    </div>
+    <div class="campo">
+      <label>Id ${novo?"— gerado do projeto · estável, nunca reciclado":"— não se muda"}</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="eId" value="${esc(it.id)}" ${novo?"readonly":"disabled"}
+               placeholder="escolha o projeto" style="flex:1;font-family:var(--mono)">
+        ${novo?`<button type="button" class="btn fant" id="eIdLivre"
+               title="só para caso excepcional — o número seguinte já foi calculado">editar à mão</button>`:""}
+      </div>
+      ${novo?`<p style="margin:6px 0 0;font-size:11px;color:var(--muted)" id="eIdNota"></p>`:""}
     </div>
     <div class="campo"><label>Título — uma linha, sem ponto final</label>
       <input id="eTit" value="${esc(it.titulo)}"></div>
@@ -807,7 +1002,7 @@ function editar(it){
       <div class="campo"><label>Componente</label><select id="eComp">
         <option value=""></option>${COMPONENTES.map(c=>op(c,it.componente)).join("")}</select></div>
       <div class="campo"><label>Dono</label><select id="eDono">
-        ${DONOS.map(d=>op(d,it.dono)).join("")}</select></div>
+        ${opcoesDono(it.dono).map(d=>op(d,it.dono)).join("")}</select></div>
     </div>
     <div class="dupla">
       <div class="campo"><label>Situação</label><select id="eSit">
@@ -835,6 +1030,47 @@ function editar(it){
     <button class="btn" id="eCancelar">Cancelar</button>
     <div class="espaco"></div>
     <span style="font-size:11.5px;color:var(--muted)">guardar não commita — use “Salvar no git”</span>`;
+
+  /* ── projeto → família → id, recalculado a cada troca ────────────────────── */
+  let idNaMao = false;
+  function encheFamilias(){
+    const proj = $("#eProj").value.trim();
+    const pres = prefixosDe(proj);
+    const sel  = $("#ePre");
+    if(!novo){                                    // editando: mostra a do id, e só
+      sel.innerHTML = `<option>${esc(it.id.replace(/-\d+$/,""))}</option>`; return;
+    }
+    sel.innerHTML = pres.length
+      ? pres.map(p=>`<option>${esc(p)}</option>`).join("")
+      : `<option value="">— projeto novo: escreva o id à mão —</option>`;
+    geraId();
+  }
+  function geraId(){
+    if(!novo || idNaMao) return;
+    const pre = $("#ePre").value;
+    const gerado = proximoId(pre);
+    $("#eId").value = gerado;
+    const nota = $("#eIdNota");
+    if(!nota) return;
+    if(!pre){
+      nota.textContent = "Nenhuma família conhecida para este projeto — o id tem de ser escrito à mão.";
+      $("#eId").readOnly = false; idNaMao = true;
+    } else {
+      const n = dados.itens.filter(i=>i.id.startsWith(pre+"-")).length;
+      nota.textContent = `${n} item${n===1?"":"s"} já usa${n===1?"":"m"} ${pre}. `+
+                         `O número é o maior + 1 — id não se recicla.`;
+    }
+  }
+  if(novo){
+    $("#eProj").oninput  = encheFamilias;
+    $("#eProj").onchange = encheFamilias;
+    $("#ePre").onchange  = geraId;
+    $("#eIdLivre").onclick = ()=>{
+      idNaMao = true; $("#eId").readOnly = false; $("#eId").focus();
+      $("#eIdNota").textContent = "Id à mão. Confira que ele não existe e que segue a família do projeto.";
+    };
+  }
+  encheFamilias();
 
   $("#eCancelar").onclick = ()=> novo ? fechar() : abrir(it.id);
   $("#eSalvar").onclick = ()=>{
