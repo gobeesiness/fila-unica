@@ -133,6 +133,11 @@ main{padding:18px}
 .cartao h2{margin-bottom:6px;font-size:19px}
 .cartao p{margin:0 0 16px;font-size:13px;color:var(--muted)}
 .oculto{display:none!important}
+/* aviso de escopo do token — usa a paleta da casa, sem cor nova */
+.avisoEscopo{margin-top:14px;padding:11px 13px;border-radius:var(--r);font-size:11.5px;
+  line-height:1.6;background:var(--mel-soft);border:1px solid var(--mel-borda);color:var(--tinta)}
+.avisoEscopo.ruim{background:var(--azul-soft);border-color:var(--erro);color:var(--erro)}
+.avisoEscopo code{font-family:var(--mono);font-size:10.5px}
 @media(max-width:640px){
   .quadro{grid-template-columns:1fr}.dupla{grid-template-columns:1fr}
   .lista{max-height:none}main{padding:12px}
@@ -154,25 +159,32 @@ main{padding:18px}
       <label>Token do GitHub — o repositório é <strong>privado</strong>, então ele é obrigatório</label>
       <input type="password" id="tok" placeholder="github_pat_… ou ghp_…" autocomplete="off">
     </div>
-    <details style="margin:-6px 0 14px;font-size:11.5px;line-height:1.65">
-      <summary style="cursor:pointer;color:var(--mel-600);font-weight:600">Qual token criar</summary>
+    <details style="margin:-6px 0 14px;font-size:11.5px;line-height:1.65" open>
+      <summary style="cursor:pointer;color:var(--mel-600);font-weight:600">Como criar o token — 4 passos</summary>
       <p style="margin:8px 0 0">
-        <strong>Preferido — fine-grained</strong> (<em>Settings → Developer settings → Personal access
-        tokens → Fine-grained</em>): <em>Resource owner</em> <code>gobeesiness</code>,
-        <em>Only select repositories</em> → <code>go-beesiness-regras</code>,
-        e uma única permissão — <em>Repository permissions → Contents → Read and write</em>.
-        Ponha validade; token que não vence é token que ninguém revoga.
+        <strong>É o token clássico com escopo <code>repo</code></strong> — decisão do CTO em
+        04/08/2026, e o motivo está na nota abaixo.
       </p>
+      <ol style="margin:8px 0 0;padding-left:18px">
+        <li>Abra <a href="https://github.com/settings/tokens/new" target="_blank"
+            rel="noopener">github.com/settings/tokens/new</a> (<em>Settings → Developer settings →
+            Personal access tokens → Tokens (classic)</em>).</li>
+        <li>Em <em>Note</em>, escreva algo que se reconheça depois — <code>fila-unica</code>.</li>
+        <li>Em <em>Expiration</em>, ponha <strong>30 dias</strong>.
+            <strong>Token que não vence é token que ninguém revoga.</strong></li>
+        <li>Marque <strong>apenas a caixa <code>repo</code></strong> — a de cima, que já inclui as
+            de dentro. <strong>Não marque mais nada.</strong> <em>Generate token</em>, e copie: o
+            GitHub mostra o valor <strong>uma única vez</strong>.</li>
+      </ol>
       <p style="margin:8px 0 0">
-        ⚠️ <strong>Fine-grained em repositório de organização precisa do aval de um
-        <em>owner</em>.</strong> Enquanto o pedido estiver pendente o token existe e
-        <strong>não funciona</strong> — e o GitHub responde <code>404</code>, o mesmo código de
-        “não existe”. Esta tela agora distingue os dois e diz qual é.
-      </p>
-      <p style="margin:8px 0 0">
-        <strong>Alternativa que funciona sem aval — clássico</strong>, escopo <code>repo</code>.
-        Destrava na hora, mas <code>repo</code> é <strong>escrita em todos os repositórios da
-        organização</strong>. Use só até o fine-grained ser aprovado, e com validade curta.
+        <strong>Por que o clássico, e não o fine-grained.</strong> O fine-grained limitaria o token a
+        <em>um</em> repositório, mas em organização ele precisa do aval de um <em>owner</em> — e
+        enquanto o pedido estiver pendente o token <strong>existe e não funciona</strong>, com o
+        GitHub respondendo <code>404</code>, o mesmo código de “não existe”. Como o CTO e o CEO
+        <strong>já enxergam todos os repositórios</strong>, o escopo <code>repo</code> não lhes
+        concede nada de novo: <strong>não é escalada de privilégio</strong>. O que muda é o
+        <strong>raio de alcance se o token vazar</strong> — e é por isso que a validade é curta e a
+        tela confere, ao conectar, se você não marcou caixa a mais.
       </p>
     </details>
     <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:16px;color:var(--muted)">
@@ -185,6 +197,7 @@ main{padding:18px}
       <button class="btn" id="abrirArquivo">Abrir um .json do disco</button>
       <input type="file" id="arq" accept=".json,application/json" class="oculto">
     </div>
+    <div id="avisoEscopo" class="oculto"></div>
     <p style="margin:15px 0 0;font-size:11.5px;line-height:1.6">
       Sem token ela <strong>não carrega o backlog</strong> — o repositório é privado. O botão do
       disco existe só para abrir um <code>.json</code> que você já tenha; ele <strong>não</strong>
@@ -857,9 +870,72 @@ function entrar(){
   render();
 }
 
+/* ── O que o token PODE, dito na cara ────────────────────────────────────────
+   Decisão do CTO em 04/08: o caminho da casa é o token CLÁSSICO com escopo
+   `repo`. O argumento é bom — ele e o CEO já enxergam os 28 repositórios, então
+   `repo` não concede nada que eles já não tenham. Não é escalada de privilégio.
+
+   O que sobra é RAIO DE ALCANCE se o token vazar, e aí a diferença entre um
+   token com `repo` e um com `repo, delete_repo, admin:org` é enorme. A tela de
+   criação do GitHub tem as caixas todas juntas, e marcar uma a mais é fácil.
+
+   O GitHub devolve os escopos no header `X-OAuth-Scopes`, e ele está no
+   `Access-Control-Expose-Headers` — medido em 04/08 —, então o navegador
+   consegue ler. A tela passa a dizer o que o token pode ANTES de guardá-lo.
+   (Token fine-grained não manda esse header; ausência = fine-grained, e aí não
+   há o que conferir.) ──────────────────────────────────────────────────────── */
+const PERIGOSOS = {
+  "delete_repo"      : "APAGAR repositórios",
+  "admin:org"        : "administrar a organização",
+  "write:org"        : "escrever na organização",
+  "admin:repo_hook"  : "administrar webhooks",
+  "admin:enterprise" : "administrar a enterprise",
+  "admin:public_key" : "gerir chaves SSH da conta",
+  "admin:gpg_key"    : "gerir chaves GPG da conta",
+  "write:packages"   : "publicar pacotes",
+  "user"             : "alterar o perfil e os e-mails da conta",
+};
+async function conferirEscopos(t){
+  try{
+    const r = await fetch(API+`/repos/${REPO}`, { headers:{
+      "Accept":"application/vnd.github+json",
+      "X-GitHub-Api-Version":"2022-11-28",
+      "Authorization":"Bearer "+t }});
+    const bruto = r.headers.get("X-OAuth-Scopes");
+    if(bruto === null) return {tipo:"fine-grained"};          // não manda o header
+    const esc = bruto.split(",").map(s=>s.trim()).filter(Boolean);
+    return { tipo:"classico", escopos:esc,
+             temRepo: esc.includes("repo"),
+             extras: esc.filter(e=>PERIGOSOS[e]) };
+  }catch(e){ return {tipo:"indeterminado"}; }
+}
+
 $("#conectar").onclick = async ()=>{
   const t=$("#tok").value.trim();
   if(!t) return brinde("cole o token, ou abra um .json do disco",true);
+
+  const d = await conferirEscopos(t);
+  const av = $("#avisoEscopo");
+  av.className = "oculto"; av.innerHTML = "";
+  if(d.tipo === "classico"){
+    if(!d.temRepo){
+      av.className = "avisoEscopo ruim";
+      av.innerHTML = `Este token clássico <strong>não tem o escopo <code>repo</code></strong> — ele tem `+
+        `<code>${esc(d.escopos.join(", ")||"nenhum")}</code>. Sem <code>repo</code> ele não lê um `+
+        `repositório privado, e o GitHub vai responder 404 como se o arquivo não existisse. `+
+        `Gere outro marcando <code>repo</code>.`;
+      return;                                   // nem tenta carregar: já sabemos que vai falhar
+    }
+    if(d.extras.length){
+      av.className = "avisoEscopo";
+      av.innerHTML = `⚠️ Este token vai além do necessário. Além de <code>repo</code>, ele pode `+
+        `<strong>${d.extras.map(e=>esc(PERIGOSOS[e])).join("</strong>, <strong>")}</strong> `+
+        `(<code>${esc(d.extras.join(", "))}</code>). A tela usa <strong>só</strong> leitura e `+
+        `escrita de arquivo. Não impede de continuar — mas se ele vazar, vaza tudo isso junto. `+
+        `Vale gerar outro só com <code>repo</code>.`;
+    }
+  }
+
   token=t;
   if($("#lembrar").checked) try{ localStorage.setItem("gb_tok",t); }catch(e){}
   await carregar();
