@@ -980,11 +980,18 @@ function editar(it){
   $("#gCorpo").innerHTML = `
     <div class="dupla">
       <div class="campo"><label>Projeto</label>
-        <!-- 🔴 Era <input list="lProj">. O datalist do navegador FILTRA pelo que
-             está digitado, então, com um projeto já escolhido, abrir a lista
-             mostrava só ele — e só voltava tudo apagando o campo. Relatado pelo
-             CTO em 04/08. `<select>` mostra sempre a lista inteira; projeto novo
-             tem entrada própria. -->
+        <!-- Era um input com datalist. O datalist do navegador FILTRA as opcoes
+             pelo que esta digitado, entao, com um projeto ja escolhido, abrir a
+             lista mostrava so ele - e so voltava tudo apagando o campo. Relatado
+             pelo CTO em 04/08. O select mostra sempre a lista inteira; projeto
+             novo tem entrada propria.
+             SEM CRASE NESTE COMENTARIO: ele vive dentro de um template literal,
+             e crase aqui encerra a string. Ja quebrou DUAS vezes em 04/08, e a
+             segunda foi neste mesmo comentario. Pior: NAO da erro de sintaxe.
+             Crase, texto, crase, com um sinal de menor entre elas, e JS valido
+             (vira comparacao), entao o parse passa limpo e so estoura em tempo
+             de execucao com "select is not defined". Ha um teste guardando isto:
+             scripts/testar-tela-criacao.mjs, secao 8. -->
         <select id="eProj">
           <option value="">— escolha —</option>
           ${[...new Set(dados.itens.map(i=>i.projeto))].filter(Boolean).sort()
