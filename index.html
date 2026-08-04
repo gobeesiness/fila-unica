@@ -205,14 +205,13 @@ main{padding:18px}
     </label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn pri" id="conectar">Conectar</button>
-      <button class="btn" id="abrirArquivo">Abrir um .json do disco</button>
-      <input type="file" id="arq" accept=".json,application/json" class="oculto">
     </div>
     <div id="avisoEscopo" class="oculto"></div>
     <p style="margin:15px 0 0;font-size:11.5px;line-height:1.6">
-      Sem token ela <strong>não carrega o backlog</strong> — o repositório é privado. O botão do
-      disco existe só para abrir um <code>.json</code> que você já tenha; ele <strong>não</strong>
-      fala com o git. ⚠️ Se marcar “lembrar”, ele fica no <code>localStorage</code> desta máquina.
+      Sem token ela <strong>não carrega o backlog</strong> — o repositório é privado, e
+      <strong>não há caminho offline</strong>: a tela lê e escreve sempre no git, nunca num arquivo
+      solto, para que ninguém trabalhe sobre uma cópia vencida.
+      ⚠️ Se marcar “lembrar”, ele fica no <code>localStorage</code> desta máquina.
     </p>
   </div>
 </div>
@@ -225,7 +224,6 @@ main{padding:18px}
   <span class="pill" id="pillVivo" title="confere o git a cada 60 s, e ao voltar para esta aba">—</span>
   <div class="espaco"></div>
   <button class="btn fant" id="tema" title="Tema claro/escuro">◐</button>
-  <button class="btn fant" id="baixar" title="Baixar o JSON">↓ JSON</button>
   <button class="btn fant" id="recarregar" title="Reler do GitHub">↻</button>
   <button class="btn" id="novo">+ Tarefa</button>
   <button class="btn pri" id="salvar" disabled>Salvar no git</button>
@@ -323,7 +321,9 @@ let base   = new Map();     // id -> impressao do item COMO ELE ESTAVA quando li
                             // um item difere porque EU mexi ou porque OUTRA SESSÃO mexeu.
 let token  = null;
 let sujo   = false;         // há mudança não salva
-let modo   = "leitura";     // leitura | github
+let modo   = "desconectado";   // desconectado | github. Nao ha mais modo "leitura":
+                               // o caminho offline foi removido em 04/08 (ver a nota
+                               // ao fim do arquivo). So se le e escreve no git.
 let etag   = null;          // = sha do blob. Vai no If-None-Match e faz o giro custar 304
 let vigia  = null;          // handle do setInterval, para não ligar dois
 let conferindo = false;     // um giro por vez — aba lenta não empilha requisição
@@ -624,7 +624,7 @@ function pulso(){
 }
 
 async function salvar(){
-  if(modo!=="github"){ brinde("modo leitura — baixe o JSON e commite à mão",true); return; }
+  if(modo!=="github"){ brinde("sem conexão com o git — conecte com o token para salvar",true); return; }
   const bt=$("#salvar"); bt.disabled=true; bt.textContent="salvando…";
   try{
     // Até 3 voltas: entre reler e escrever, outra sessão ainda pode entrar.
@@ -701,7 +701,7 @@ function passa(i){
 function render(){
   const vis = dados.itens.filter(passa);
   $("#pillTotal").textContent = `${vis.length} de ${dados.itens.length}${sujo?" · não salvo":""}`;
-  $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "arquivo local (leitura)";
+  $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "sem conexão";
   // branch fora da main precisa gritar: escrever ali não é escrever no dado canônico
   const forade = modo==="github" && BRANCH!=="main";
   $("#pillFonte").style.borderColor = (sujo||forade) ? "var(--erro)" : "";
@@ -1222,31 +1222,31 @@ $("#conectar").onclick = async ()=>{
   await carregar();
 };
 $("#tok").onkeydown = e => { if(e.key==="Enter") $("#conectar").click(); };
-$("#abrirArquivo").onclick = ()=>$("#arq").click();
-$("#arq").onchange = e =>{
-  const f=e.target.files[0]; if(!f) return;
-  const fr=new FileReader();
-  fr.onload = ()=>{
-    try{
-      const j=JSON.parse(fr.result);
-      if(!Array.isArray(j.itens)) throw new Error("sem a chave `itens`");
-      dados=j; modo="leitura"; sha=null; base=new Map(); sujo=false; entrar();
-      brinde(`${j.itens.length} itens — modo leitura, não salva em git`);
-    }catch(err){ brinde("json inválido: "+err.message,true); }
-  };
-  fr.readAsText(f,"utf-8");
-};
+
+/* ── Não existe caminho offline, e é de propósito ────────────────────────────
+   Decisão do CTO, 04/08/2026: *"com relação ao baixar o JSON vamos desativar,
+   pois não quero eventualmente trabalhar com um json desatualizado"*.
+
+   Saíram os DOIS lados do laço, porque tirar só um não resolve:
+     · o botão "↓ JSON", que PRODUZIA a cópia;
+     · o "Abrir um .json do disco", que a CONSUMIA — e era ele que punha a tela
+       em modo leitura, exibindo dado que podia ter horas ou dias.
+
+   O risco não era teórico. O arquivo muda mais de 20 vezes por dia, por sessões
+   paralelas. Uma cópia baixada de manhã e reaberta à tarde mostra uma fila que
+   não existe mais — e, pior, quem a visse concluiria coisas sobre o backlog a
+   partir dela. A fusão de três entradas protege a ESCRITA concorrente; ela não
+   tem como proteger a LEITURA de um arquivo que saiu do git.
+
+   Quem precisar do arquivo em si continua tendo onde: ele está em git, legível,
+   em `go-beesiness-regras/dados/tarefas.json`. O que deixou de existir é a tela
+   fingir que um arquivo solto é a fila. ───────────────────────────────────── */
 
 $("#salvar").onclick = salvar;
 $("#novo").onclick = ()=>editar(null);
 $("#recarregar").onclick = ()=>{
   if(sujo && !confirm("Você tem mudança não salva. Reler do git descarta. Continuar?")) return;
   carregar();
-};
-$("#baixar").onclick = ()=>{
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(dados,null,2)+"\n"],{type:"application/json"}));
-  a.download="tarefas.json"; a.click(); URL.revokeObjectURL(a.href);
 };
 $("#tema").onclick = ()=>{
   const d=document.documentElement.dataset.theme==="dark"?"light":"dark";
