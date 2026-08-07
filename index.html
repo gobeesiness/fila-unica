@@ -223,6 +223,11 @@ main{padding:18px}
   <span class="pill" id="pillTotal">—</span>
   <span class="pill" id="pillVivo" title="confere o git a cada 60 s, e ao voltar para esta aba">—</span>
   <div class="espaco"></div>
+  <!-- Par do irTela do painel: os dois arquivos sao irmaos tanto no duplo clique
+       (app/) quanto publicados (fila-unica/), entao o href relativo vale nos dois.
+       Sem crase neste comentario: ele vive dentro de template literal (cenario 8). -->
+  <a class="btn fant" id="irPainel" href="painel.html"
+     title="mapa de calor, progresso e envelhecimento — so leitura">ver o painel ↗</a>
   <button class="btn fant" id="tema" title="Tema claro/escuro">◐</button>
   <button class="btn fant" id="recarregar" title="Reler do GitHub">↻</button>
   <button class="btn" id="novo">+ Tarefa</button>
