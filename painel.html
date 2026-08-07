@@ -1,0 +1,1234 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel da fila única — Go Beesiness</title>
+<style>
+/* ── Tokens da casa. Fonte: app/index.html, que copia gobeejobs-frontend/src/theme.css.
+      NÃO inventar paleta. As únicas cores novas aqui são a RAMPA SEQUENCIAL do mapa de
+      calor (--h1..--h6) — a casa não tinha token para "magnitude", e inventar um a olho
+      seria justamente o que o método proíbe. Ver a nota `RAMPA` no <script>. ── */
+:root{
+  --mel:#ffcb05; --mel-500:#ffbd00; --mel-600:#e6a900; --mel-50:#fff5cc; --mel-soft:#fffbeb;
+  --mel-200:#ffea99; --mel-borda:#f2e6b8;
+  --tinta:#41393b; --texto:#4b5563; --muted:#757575; --fraco:#97878c;
+  --azul:#2d5de0; --azul-soft:#f1f4fe; --erro:#e02d3c;
+  --borda:#e0e0e0; --borda-2:#e5e7eb; --bg:#f5f5f5; --card:#fff;
+  --sombra:0 1px 2px rgba(65,57,59,.06),0 4px 12px rgba(65,57,59,.05);
+  --r:10px; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+
+  /* situação — escala de ESTADO da casa (não é paleta categórica; ver nota no script) */
+  --sit-aberto:#e6a900; --sit-fazendo:#2d5de0; --sit-bloqueado:#e02d3c;
+  --sit-feito:#2e9e5b;  --sit-descartado:#97878c;
+
+  /* estado (bom/atenção/crítico) — reaproveita a paleta da casa, sempre com ícone + rótulo */
+  --bom:#2e9e5b; --atencao:#e6a900; --critico:#e02d3c;
+
+  /* série única (identidade) e de-ênfase, degraus documentados do azul sequencial */
+  --serie:#2a78d6; --serie-fraca:#86b6ef; --trilho:#cde2fb;
+
+  /* rampa sequencial do mapa de calor: 6 degraus claro→escuro + o "zero".
+     A tinta de cada degrau foi MEDIDA (contraste WCAG contra o próprio degrau),
+     não escolhida: h1 14,9 · h2 11,0 · h3 7,9 · h4 5,4 · h5 5,4 · h6 12,0 — todos ≥ 4,5. */
+  --h0:transparent;  --h0t:var(--fraco);
+  --h1:#cde2fb; --h1t:#0b0b0b;
+  --h2:#9ec5f4; --h2t:#0b0b0b;
+  --h3:#6da7ec; --h3t:#0b0b0b;
+  --h4:#3987e5; --h4t:#0b0b0b;
+  --h5:#256abf; --h5t:#ffffff;
+  --h6:#0d366b; --h6t:#ffffff;
+}
+:root[data-theme="dark"]{
+  --tinta:#f3efe9; --texto:#c9c3bd; --muted:#9a938d; --fraco:#8a807f;
+  --azul:#8fa9f5; --azul-soft:#1e2438; --erro:#ff7b85;
+  --borda:#3a3335; --borda-2:#332d2f; --bg:#1a1618; --card:#242022;
+  --mel-soft:#2b2413; --mel-50:#3a3117; --mel-borda:#4a3f1c;
+  --sombra:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25);
+
+  --bom:#2e9e5b; --atencao:#e6a900; --critico:#ff7b85;
+  /* o trilho tem de ser CHROME, não dado: em #184f95 uma barra de 0% lia como
+     barra cheia no escuro (visto no render de 07/08). Um degrau abaixo resolve. */
+  --serie:#3987e5; --serie-fraca:#1c5cab; --trilho:#0d366b;
+
+  /* o sequencial NÃO é o claro invertido por acaso: no escuro o "quase zero" é que
+     tem de encostar na superfície. Mesmos degraus documentados, âncora trocada.
+     Tintas medidas: h1 12,0 · h2 8,1 · h3 5,4 · h4 5,4 · h5 9,3 · h6 14,9. */
+  --h1:#0d366b; --h1t:#ffffff;
+  --h2:#184f95; --h2t:#ffffff;
+  --h3:#256abf; --h3t:#ffffff;
+  --h4:#3987e5; --h4t:#0b0b0b;
+  --h5:#86b6ef; --h5t:#0b0b0b;
+  --h6:#cde2fb; --h6t:#0b0b0b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--bg);color:var(--texto);
+  font:14px/1.55 'Inter var',Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{color:var(--tinta);margin:0;font-weight:700;letter-spacing:-.01em}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,select{font:inherit;color:var(--tinta);background:var(--card);
+  border:1px solid var(--borda);border-radius:8px;padding:7px 10px;outline:0}
+input:focus,select:focus,button:focus-visible,summary:focus-visible,
+[tabindex]:focus-visible{border-color:var(--mel-600);box-shadow:0 0 0 3px var(--mel-50);outline:0}
+a{color:var(--azul);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.88em;background:var(--mel-soft);
+  border:1px solid var(--mel-borda);border-radius:4px;padding:1px 5px;color:var(--tinta)}
+
+/* ── Topo ── */
+header{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--borda);
+  padding:10px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.marca{display:flex;align-items:center;gap:9px;font-weight:900;color:var(--tinta);font-size:15px;letter-spacing:-.02em}
+.abelha{width:26px;height:26px;border-radius:7px;background:var(--mel);display:grid;place-items:center;
+  font-size:14px;flex:none}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--mel-soft);
+  border:1px solid var(--mel-borda);color:var(--tinta);white-space:nowrap}
+.pill.leitura{background:var(--azul-soft);border-color:var(--azul);color:var(--azul)}
+.espaco{flex:1}
+.btn{padding:7px 13px;border-radius:8px;font-weight:600;font-size:13px;border:1px solid var(--borda);
+  background:var(--card);color:var(--tinta);transition:.12s}
+.btn:hover{border-color:var(--mel-600);background:var(--mel-soft)}
+.btn.pri{background:var(--mel);border-color:var(--mel);color:#41393b}
+.btn.pri:hover{background:var(--mel-500);border-color:var(--mel-500)}
+.btn.fant{border-color:transparent}
+.btn.fant:hover{background:var(--mel-soft);border-color:var(--mel-borda)}
+
+/* ── Uma faixa de filtro, acima de TUDO que ela recorta ── */
+.filtros{display:flex;gap:8px;padding:11px 18px;flex-wrap:wrap;align-items:center;
+  background:var(--card);border-bottom:1px solid var(--borda);position:sticky;top:53px;z-index:30}
+.filtros label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.filtros select{min-width:150px}
+.recorte{font-size:12px;color:var(--muted);margin-left:auto}
+
+/* ── Cartões ── */
+main{padding:18px;max-width:1500px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:var(--r);
+  padding:15px 16px 13px;box-shadow:var(--sombra);margin-bottom:14px;min-width:0}
+.card>h2{font-size:14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.card>h2 .op{margin-left:auto;display:flex;gap:6px;align-items:center;font-size:11px;
+  font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0}
+.legenda-card{font-size:12px;color:var(--muted);margin:5px 0 12px;line-height:1.5}
+.chip{font-size:11px;font-weight:600;padding:4px 9px;border-radius:99px;border:1px solid var(--borda);
+  background:var(--card);color:var(--muted);transition:.12s}
+.chip:hover{border-color:var(--mel-600);color:var(--tinta)}
+.chip.on{background:var(--tinta);border-color:var(--tinta);color:var(--card)}
+:root[data-theme="dark"] .chip.on{background:var(--mel);color:#2a2426;border-color:var(--mel)}
+.rolar{overflow-x:auto;padding-bottom:4px}
+.duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:14px;align-items:start}
+.trio{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
+
+/* ── Faixa de números ── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:14px}
+.tile{background:var(--card);border:1px solid var(--borda);border-radius:var(--r);padding:13px 14px;
+  box-shadow:var(--sombra)}
+.tile .rot{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.055em;color:var(--muted)}
+.tile .val{font-size:30px;font-weight:700;color:var(--tinta);line-height:1.15;margin-top:3px;letter-spacing:-.02em}
+.tile .sub{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+.tile.heroi{grid-column:span 2}
+.tile.heroi .val{font-size:52px}
+.tile .val .est{font-size:.62em;font-weight:700;margin-right:4px;vertical-align:.12em}
+.est.bom{color:var(--bom)} .est.atencao{color:var(--atencao)} .est.critico{color:var(--critico)}
+.tile.alerta{border-color:var(--critico)}
+
+/* ── Tabela gêmea (todo gráfico tem uma) ── */
+details.tab{margin-top:10px;border-top:1px solid var(--borda-2);padding-top:8px}
+details.tab summary{cursor:pointer;font-size:11.5px;font-weight:700;color:var(--muted);
+  list-style:none;display:inline-flex;gap:5px;align-items:center;border-radius:6px;padding:2px 4px}
+details.tab summary::-webkit-details-marker{display:none}
+details.tab summary::before{content:"▸";display:inline-block;transition:.12s}
+details.tab[open] summary::before{transform:rotate(90deg)}
+details.tab summary:hover{color:var(--tinta)}
+table{border-collapse:collapse;width:100%;margin-top:9px;font-size:12px}
+th,td{padding:5px 9px;text-align:right;border-bottom:1px solid var(--borda-2);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;font-variant-numeric:normal}
+th{color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+
+/* ── Listas de risco ── */
+.risco{max-height:250px;overflow-y:auto;margin-top:9px}
+.risco li{list-style:none;padding:6px 8px;border:1px solid var(--borda-2);border-radius:7px;
+  margin-bottom:5px;font-size:12.5px;display:flex;gap:8px;align-items:baseline}
+.risco ul{margin:0;padding:0}
+.risco .id{font-family:var(--mono);font-size:10.5px;color:var(--fraco);font-weight:600;flex:none}
+.risco .tt{color:var(--tinta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risco .pj{margin-left:auto;font-size:10.5px;color:var(--muted);flex:none}
+.gate-ok{display:flex;gap:9px;align-items:center;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--borda-2);background:var(--bg);font-size:12.5px;color:var(--texto);margin-top:9px}
+
+/* ── SVG ── */
+svg{display:block}
+svg text{font:inherit}
+.rot-eixo{fill:var(--muted);font-size:11px}
+.rot-linha{fill:var(--tinta);font-size:12px;font-weight:600}
+.num{fill:var(--tinta);font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.num-fraco{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.grade{stroke:var(--borda-2);stroke-width:1}
+.cel{cursor:pointer}
+.cel rect{stroke:var(--card);stroke-width:2}
+.cel:hover rect,.cel:focus-visible rect{stroke:var(--tinta);stroke-width:2}
+.cel:focus-visible{outline:none}
+
+/* ── Dica (tooltip) ── */
+.dica{position:fixed;z-index:95;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--tinta);color:var(--card);padding:7px 10px;border-radius:7px;font-size:12px;
+  line-height:1.45;max-width:280px;box-shadow:var(--sombra)}
+.dica.on{opacity:1}
+.brinde{position:fixed;left:50%;bottom:24px;transform:translate(-50%,80px);z-index:90;
+  background:var(--tinta);color:var(--card);padding:11px 20px;border-radius:99px;font-size:13px;
+  font-weight:600;box-shadow:var(--sombra);transition:.22s;opacity:0;pointer-events:none;max-width:88vw}
+.brinde.on{transform:translate(-50%,0);opacity:1}
+.brinde.ruim{background:var(--erro);color:#fff}
+
+/* ── Conectar ── */
+.capa{position:fixed;inset:0;background:var(--bg);z-index:80;display:grid;place-items:center;padding:20px;
+  overflow-y:auto}
+.cartao{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:26px;
+  max-width:540px;width:100%;box-shadow:var(--sombra)}
+.cartao h2{margin-bottom:6px;font-size:19px}
+.cartao p{margin:0 0 16px;font-size:13px;color:var(--muted)}
+.campo{margin-bottom:14px}
+.campo>label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.055em;
+  color:var(--muted);font-weight:700;margin-bottom:5px}
+.campo input{width:100%}
+.oculto{display:none!important}
+.avisoEscopo{margin-top:14px;padding:11px 13px;border-radius:var(--r);font-size:11.5px;
+  line-height:1.6;background:var(--mel-soft);border:1px solid var(--mel-borda);color:var(--tinta)}
+.avisoEscopo.ruim{background:var(--azul-soft);border-color:var(--erro);color:var(--erro)}
+.avisoEscopo code{font-family:var(--mono);font-size:10.5px}
+
+@media(max-width:760px){
+  main{padding:12px}.filtros{position:static}.tile.heroi{grid-column:span 2}
+  .duo,.trio{grid-template-columns:1fr}
+}
+@media print{ .filtros,header .btn{display:none} .card{break-inside:avoid} }
+</style>
+</head>
+<body>
+
+<!-- ══ Conectar ══════════════════════════════════════════════════════════════ -->
+<div class="capa" id="capa">
+  <div class="cartao">
+    <div class="marca" style="margin-bottom:14px"><span class="abelha">🐝</span> Painel da fila única</div>
+    <h2>Onde está o dado</h2>
+    <p>Este painel <strong>não guarda nada e não escreve nada</strong>. A fonte é
+      <code>go-beesiness-regras/dados/tarefas.json</code>, em git. Quem edita é a
+      <strong>tela</strong> (<code>app/index.html</code>); aqui é <strong>só leitura</strong>.</p>
+
+    <div class="campo">
+      <label>Token do GitHub — o repositório é <strong>privado</strong>, então ele é obrigatório</label>
+      <input type="password" id="tok" placeholder="github_pat_… ou ghp_…" autocomplete="off">
+    </div>
+    <details style="margin:-6px 0 14px;font-size:11.5px;line-height:1.65">
+      <summary style="cursor:pointer;color:var(--mel-600);font-weight:600">Como criar o token — 4 passos</summary>
+      <p style="margin:8px 0 0">
+        <strong>É o token clássico com escopo <code>repo</code></strong> — decisão do CTO em
+        04/08/2026. É o mesmo token da tela; se você já usa a tela neste navegador, ele já está aqui.
+      </p>
+      <ol style="margin:8px 0 0;padding-left:18px">
+        <li>Abra <a href="https://github.com/settings/tokens/new" target="_blank"
+            rel="noopener">github.com/settings/tokens/new</a> (<em>Settings → Developer settings →
+            Personal access tokens → Tokens (classic)</em>).</li>
+        <li>Em <em>Note</em>, escreva algo que se reconheça depois — <code>fila-unica</code>.</li>
+        <li>Em <em>Expiration</em>, ponha <strong>30 dias</strong>.
+            <strong>Token que não vence é token que ninguém revoga.</strong></li>
+        <li>Marque <strong>apenas a caixa <code>repo</code></strong> — a de cima, que já inclui as
+            de dentro. <strong>Não marque mais nada.</strong> <em>Generate token</em>, e copie: o
+            GitHub mostra o valor <strong>uma única vez</strong>.</li>
+      </ol>
+      <p style="margin:8px 0 0">
+        <strong>Por que <code>repo</code> se o painel só lê.</strong> Repositório privado exige
+        <code>repo</code> no token clássico — não existe escopo &ldquo;ler privado&rdquo; separado.
+        O painel usa <strong>só o verbo <code>GET</code></strong>: não há um único
+        <code>PUT</code>, <code>POST</code>, <code>PATCH</code> ou <code>DELETE</code> nesta
+        página, e isso é conferido por teste automático.
+      </p>
+    </details>
+    <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:16px;color:var(--muted)">
+      <input type="checkbox" id="lembrar" style="width:auto">
+      Lembrar neste navegador
+      <span style="color:var(--erro);font-weight:700">— guarda o token em disco</span>
+    </label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn pri" id="conectar">Conectar</button>
+    </div>
+    <div id="avisoEscopo" class="oculto"></div>
+    <p style="margin:15px 0 0;font-size:11.5px;line-height:1.6">
+      Sem token ele <strong>não carrega o backlog</strong> — o repositório é privado, e
+      <strong>não há caminho offline</strong>: o painel lê sempre do git, nunca de um arquivo
+      solto, para que ninguém decida sobre uma cópia vencida.
+      ⚠️ Se marcar “lembrar”, ele fica no <code>localStorage</code> desta máquina.
+    </p>
+  </div>
+</div>
+
+<!-- ══ Painel ═══════════════════════════════════════════════════════════════ -->
+<header class="oculto" id="topo">
+  <div class="marca"><span class="abelha">🐝</span> Painel da fila única</div>
+  <span class="pill leitura" title="este painel nunca escreve no tarefas.json">só leitura</span>
+  <span class="pill" id="pillFonte">—</span>
+  <span class="pill" id="pillVisto" title="o painel reconfere o git a cada 60 s">—</span>
+  <div class="espaco"></div>
+  <a class="btn fant" id="irTela" href="index.html" title="a tela que edita">editar na tela ↗</a>
+  <button class="btn fant" id="tema" title="Tema claro/escuro">◐</button>
+  <button class="btn fant" id="recarregar" title="Reler do GitHub">↻</button>
+</header>
+
+<div class="filtros oculto" id="filtros">
+  <label>projeto  <select id="fProjeto"><option value="">todos</option></select></label>
+  <label>dono     <select id="fDono"><option value="">todos</option></select></label>
+  <label>componente <select id="fComponente"><option value="">todos</option></select></label>
+  <label>prioridade <select id="fPrioridade"><option value="">todas</option></select></label>
+  <label>situação <select id="fSituacao"><option value="">todas</option></select></label>
+  <button class="btn fant" id="limpar" style="font-size:12px;align-self:end">limpar</button>
+  <span class="recorte" id="recorte"></span>
+</div>
+
+<main class="oculto" id="main">
+
+  <section class="kpis" id="kpis"></section>
+
+  <!-- 1. a peça central -->
+  <article class="card">
+    <h2>Mapa de calor — projeto × situação
+      <span class="op">
+        sombra:
+        <button class="chip on" id="sombraLinha">% da linha</button>
+        <button class="chip" id="sombraAbs">contagem</button>
+      </span>
+    </h2>
+    <p class="legenda-card" id="legCalor1"></p>
+    <div class="rolar"><div id="calor1"></div></div>
+    <details class="tab"><summary>ver como tabela</summary><div id="tabCalor1"></div></details>
+  </article>
+
+  <!-- 2. o segundo corte -->
+  <article class="card">
+    <h2>Mapa de calor — dono × situação</h2>
+    <p class="legenda-card" id="legCalor2"></p>
+    <div class="rolar"><div id="calor2"></div></div>
+    <details class="tab"><summary>ver como tabela</summary><div id="tabCalor2"></div></details>
+  </article>
+
+  <div class="duo">
+    <!-- 3. progresso -->
+    <article class="card">
+      <h2>Progresso por projeto</h2>
+      <p class="legenda-card">Barra = <strong>% feito sobre o que está em jogo</strong> (o denominador
+        exclui os <em>descartados</em> — decidir não fazer não é dívida). Do menos concluído para o mais.</p>
+      <div class="rolar"><div id="progresso"></div></div>
+      <details class="tab"><summary>ver como tabela</summary><div id="tabProgresso"></div></details>
+    </article>
+
+    <!-- 4. envelhecimento -->
+    <article class="card">
+      <h2>Envelhecimento — quando cada item foi tocado pela última vez</h2>
+      <p class="legenda-card" id="legIdade"></p>
+      <div class="rolar"><div id="idade"></div></div>
+      <div id="baldes"></div>
+      <details class="tab"><summary>ver como tabela</summary><div id="tabIdade"></div></details>
+    </article>
+  </div>
+
+  <!-- 5. riscos -->
+  <article class="card">
+    <h2>Riscos — o que o contrato manda e o dado não cumpre</h2>
+    <p class="legenda-card">Cada bloco é uma regra do <code>dados/README.md</code>. Zero é
+      o estado correto; o número é a dívida de quem mantém a fila.</p>
+    <div class="trio" id="riscos"></div>
+  </article>
+
+  <!-- 6. distribuições -->
+  <div class="trio">
+    <article class="card">
+      <h2>De onde os itens saíram</h2>
+      <p class="legenda-card"><code>origem.tipo</code> — o contrato fecha em nove tipos.</p>
+      <div class="rolar"><div id="dOrigem"></div></div>
+      <details class="tab"><summary>ver como tabela</summary><div id="tabOrigem"></div></details>
+    </article>
+    <article class="card">
+      <h2>Por componente</h2>
+      <p class="legenda-card" id="legComponente"></p>
+      <div class="rolar"><div id="dComponente"></div></div>
+      <details class="tab"><summary>ver como tabela</summary><div id="tabComponente"></div></details>
+    </article>
+    <article class="card">
+      <h2>Por prioridade</h2>
+      <p class="legenda-card" id="legPrioridade"></p>
+      <div class="rolar"><div id="dPrioridade"></div></div>
+      <details class="tab"><summary>ver como tabela</summary><div id="tabPrioridade"></div></details>
+    </article>
+  </div>
+
+  <p style="font-size:11.5px;color:var(--muted);line-height:1.6;margin:4px 2px 24px">
+    Todo número desta página é calculado <strong>na hora</strong>, no seu navegador, a partir do
+    <code>dados/tarefas.json</code> lido do git. <strong>Não há dado embutido nesta página</strong> —
+    sem token ela não mostra item nenhum. E ela <strong>nunca escreve</strong>: quem edita é a
+    <a href="index.html">tela</a>.
+  </p>
+</main>
+
+<div class="dica" id="dica"></div>
+<div class="brinde" id="brinde"></div>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════════
+   PAINEL da fila única — vista de LEITURA sobre dados/tarefas.json.
+
+   Decisão do CTO 30/07: git é a fonte, a app é só a vista. Este painel é uma
+   vista a mais sobre a MESMA fonte — não um lugar novo. Ele não tem banco, não
+   tem estado próprio, não guarda nada e, ao contrário da `app/index.html`, não
+   escreve: não existe um `PUT`, `POST`, `PATCH` ou `DELETE` neste arquivo.
+   "A regra de sobrevivência é não haver um segundo lugar" — um painel que
+   pudesse editar seria o segundo lugar.
+
+   O repositório que serve esta página (`fila-unica`) é PÚBLICO. Por isso não há
+   uma linha de backlog aqui dentro: a página é um cliente que lê o repositório
+   PRIVADO com o token de quem abre.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+const REPO = "gobeesiness/go-beesiness-regras";
+const PATH = "dados/tarefas.json";
+const API  = "https://api.github.com";
+const BRANCH = new URLSearchParams(location.search).get("branch") || "main";
+
+/* ── Situação: é uma escala de ESTADO, não uma paleta de séries ───────────────
+   Medido com o validador do método (`dataviz/scripts/validate_palette.js`) em
+   07/08/2026, contra as duas superfícies desta página:
+
+       [FAIL] CVD    pior par adjacente #2e9e5b(feito) ↔ #e02d3c(bloqueado)
+                     ΔE 4,5 sob deuteranopia  (piso 6, alvo 8)
+       [FAIL] croma  #97878c(descartado) 0,021 — lê como cinza
+       [FAIL] banda  #e6a900(aberto) L 0,772
+
+   Ou seja: **verde e vermelho da casa colapsam para quem não distingue os dois.**
+   A consequência é de projeto, não de cor: esta página NÃO tem nenhum gráfico em
+   que a identidade da situação seja carregada por cor. As situações são sempre
+   COLUNAS rotuladas ou linhas de tabela; a cor aparece só como um ponto ao lado
+   do rótulo (ícone + rótulo, que é a mitigação prescrita para escala de estado).
+   Em particular: **não há barra empilhada de situações** — foi a peça cortada por
+   essa medição, porque o segmento `descartado` (1% do total) não comporta rótulo
+   interno, e sem rótulo a cor ficaria sozinha. ────────────────────────────── */
+const SITUACOES = [
+  {k:"aberto",    r:"Tem para fazer", v:"--sit-aberto"},
+  {k:"fazendo",   r:"Em curso",       v:"--sit-fazendo"},
+  {k:"bloqueado", r:"Bloqueado",      v:"--sit-bloqueado"},
+  {k:"feito",     r:"Foi feito",      v:"--sit-feito"},
+  {k:"descartado",r:"Descartado",     v:"--sit-descartado"},
+];
+const ORDEM_SITUACAO  = SITUACOES.map(s=>s.k);
+const ORDEM_PRIORIDADE = ["alta","media","baixa"];
+
+/* ── RAMPA sequencial (magnitude) ─────────────────────────────────────────────
+   A casa não tem token para "quanto". Inventar um degradê de mel a olho é
+   exatamente o que o método proíbe ("nunca eyeball"), e o mel claro não alcança
+   contraste de marca sobre o branco. Então a rampa é a **azul sequencial
+   documentada e validada** do método (100→700), que ainda por cima cai na
+   família do `--azul` da casa. Seis degraus + o zero: acima de ~7 classes de
+   cor as vizinhas borram. Está em CSS (`--h1..--h6`) para o tema trocar sozinho.
+   No escuro a âncora inverte — "quase zero" tem de encostar na superfície. ── */
+const NIVEIS = 6;
+
+/* ════════════════════════════════════════════════════════════════════════════
+   AGREGAÇÕES — bloco PURO: sem DOM, sem rede, sem variável de fora.
+   `scripts/testar-painel.mjs` extrai daqui até `window.__agregacoes` e roda
+   estas funções contra o `dados/tarefas.json` real. O teste NÃO guarda cópia
+   delas (mesma regra do `testar-fusao.mjs`): cópia em arquivo de teste
+   envelhece calada, e registro que mente é o problema que esta casa combate.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* `origem.tipo` é aninhado; o resto é raso. Vazio vira "—" e continua contando:
+   sumir com o item por causa de um campo em branco seria mentir no total. */
+function valorDe(item, chave){
+  const v = chave === "origem.tipo" ? ((item && item.origem) || {}).tipo : (item || {})[chave];
+  return (v === undefined || v === null || v === "") ? "—" : String(v);
+}
+
+function fatiar(itens, filtro){
+  const f = filtro || {};
+  const casa = (i,c) => !f[c] || valorDe(i,c) === f[c];
+  return itens.filter(i =>
+    casa(i,"projeto") && casa(i,"dono") && casa(i,"componente") &&
+    casa(i,"prioridade") && casa(i,"situacao"));
+}
+
+/* Nunca ofereça menos colunas do que o dado já tem — a lição do `<select>` de
+   donos da tela (04/08: 52 itens tinham dono que o select não oferecia, e salvar
+   os reatribuía em silêncio). Aqui o efeito seria mais quieto ainda: uma situação
+   nova não apareceria e a soma das células ficaria menor que o total da linha. */
+function colunasDe(itens, chave, canonicas){
+  const vistas = new Set(itens.map(i => valorDe(i, chave)));
+  const extras = [...vistas].filter(v => !canonicas.includes(v)).sort();
+  return canonicas.concat(extras);
+}
+
+function contar(itens, chave){
+  const m = new Map();
+  for(const i of itens){ const v = valorDe(i, chave); m.set(v, (m.get(v)||0) + 1); }
+  return [...m.entries()].map(([chave,n]) => ({chave, n}))
+    .sort((a,b) => b.n - a.n || (a.chave < b.chave ? -1 : 1));
+}
+
+/* Matriz linha × coluna. `celulas` sempre soma `total` — é o que o teste confere. */
+function matriz(itens, chaveLinha, chaveColuna, colunas){
+  const m = new Map();
+  for(const i of itens){
+    const l = valorDe(i, chaveLinha);
+    if(!m.has(l)) m.set(l, {chave:l, total:0, celulas: colunas.map(()=>0)});
+    const r = m.get(l);
+    r.total++;
+    const c = colunas.indexOf(valorDe(i, chaveColuna));
+    if(c >= 0) r.celulas[c]++;
+  }
+  const linhas = [...m.values()].sort((a,b) => b.total - a.total || (a.chave < b.chave ? -1 : 1));
+  const totalCol = colunas.map((_,c) => linhas.reduce((s,l) => s + l.celulas[c], 0));
+  let maxAbs = 0;
+  for(const l of linhas) for(const v of l.celulas) if(v > maxAbs) maxAbs = v;
+  return {colunas, linhas, totalCol, total: linhas.reduce((s,l) => s + l.total, 0), maxAbs};
+}
+
+/* % feito sobre o que está EM JOGO. Descartado sai do denominador: decidir não
+   fazer não é dívida, e contá-lo como pendência faria o progresso parecer pior
+   do que é — e, pior, premiaria descartar em vez de entregar se entrasse como
+   feito. Fica num campo próprio, visível. */
+function progresso(itens, chave){
+  const m = new Map();
+  for(const i of itens){
+    const k = valorDe(i, chave);
+    if(!m.has(k)) m.set(k, {chave:k, total:0, feito:0, fazendo:0, bloqueado:0, descartado:0, aberto:0});
+    const r = m.get(k);
+    r.total++;
+    const s = valorDe(i, "situacao");
+    if(s in r) r[s]++;
+  }
+  return [...m.values()].map(r => {
+    r.emJogo = r.total - r.descartado;
+    r.pct = r.emJogo ? r.feito / r.emJogo : 0;
+    return r;
+  }).sort((a,b) => a.pct - b.pct || b.total - a.total || (a.chave < b.chave ? -1 : 1));
+}
+
+/* Envelhecimento. A referência nunca é menor que a data mais nova do arquivo:
+   se o relógio da máquina estiver atrasado, a idade não pode virar negativa e
+   maquiar a estagnação. A "safra" é a data mais ANTIGA presente — na prática, o
+   dia da varredura; item que ainda está nela nunca foi reconciliado por ninguém. */
+function envelhecimento(itens, referenciaISO){
+  const por = new Map();
+  let semData = 0;
+  for(const i of itens){
+    const d = String((i||{}).atualizadoEm || "").slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) { semData++; continue; }
+    por.set(d, (por.get(d)||0) + 1);
+  }
+  const datas = [...por.entries()].sort((a,b) => a[0] < b[0] ? -1 : 1)
+                  .map(([data,n]) => ({data, n}));
+  const safra    = datas.length ? datas[0].data : null;
+  const maisNova = datas.length ? datas[datas.length-1].data : null;
+  let ref = String(referenciaISO || "").slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(ref)) ref = maisNova;
+  if(maisNova && ref < maisNova) ref = maisNova;
+  const dias = (a,b) => Math.round((Date.parse(b+"T00:00:00Z") - Date.parse(a+"T00:00:00Z")) / 86400000);
+  const baldes = [
+    {rotulo:"hoje e ontem",    ate:1,        n:0},
+    {rotulo:"2 a 6 dias",      ate:6,        n:0},
+    {rotulo:"7 a 13 dias",     ate:13,       n:0},
+    {rotulo:"14 a 29 dias",    ate:29,       n:0},
+    {rotulo:"30 dias ou mais", ate:Infinity, n:0},
+  ];
+  for(const d of datas){
+    const idade = ref ? dias(d.data, ref) : 0;
+    (baldes.find(b => idade <= b.ate) || baldes[baldes.length-1]).n += d.n;
+  }
+  const naSafra = safra ? (por.get(safra)||0) : 0;
+  return {
+    datas, semData, safra, maisNova, referencia: ref, baldes,
+    naSafra,
+    pctSafra: itens.length ? naSafra / itens.length : 0,
+    idadeDaSafra: (safra && ref) ? dias(safra, ref) : 0,
+  };
+}
+
+/* Riscos — cada um é uma regra escrita do `dados/README.md`.
+   `todos` serve só para resolver referências cruzadas (`bloqueadoPor` aponta
+   para id que pode estar fora da fatia filtrada). */
+function riscos(itens, todos){
+  const universo = todos && todos.length ? todos : itens;
+  const situacaoPorId = new Map(universo.map(i => [i.id, valorDe(i,"situacao")]));
+  const lista = [];
+  const bloqueado = i => valorDe(i,"situacao") === "bloqueado";
+  const pendente  = i => ["aberto","fazendo","bloqueado"].includes(valorDe(i,"situacao"));
+
+  lista.push({
+    id:"feito-sem-evidencia", estado:"critico",
+    rotulo:"Itens `feito` sem evidência",
+    porque:"O validador reprova: sem PR, commit, documento ou deploy, não é levantamento — é afirmação.",
+    itens: itens.filter(i => valorDe(i,"situacao") === "feito" && !((i.evidencia)||[]).length),
+  });
+  lista.push({
+    id:"bloqueado-sem-porque", estado:"critico",
+    rotulo:"Itens `bloqueado` sem `bloqueadoPor`",
+    porque:"Bloqueado sem dizer por quê não é bloqueio, é um item parado sem dono do desbloqueio.",
+    itens: itens.filter(i => bloqueado(i) && !((i.bloqueadoPor)||[]).length),
+  });
+  lista.push({
+    id:"sem-origem", estado:"critico",
+    rotulo:"Itens sem `origem.ref`",
+    porque:"Sem saber quem pediu e quando, o item é palpite. É a segunda regra do validador.",
+    itens: itens.filter(i => !(((i.origem)||{}).ref)),
+  });
+  lista.push({
+    id:"bloqueio-fantasma", estado:"atencao",
+    rotulo:"`bloqueadoPor` apontando para id inexistente",
+    porque:"Referência cruzada quebrada — o id sumiu ou foi reescrito. O README manda corrigir as referências quando um card volta com id novo.",
+    itens: itens.filter(i => ((i.bloqueadoPor)||[]).some(b => !situacaoPorId.has(b))),
+  });
+  lista.push({
+    id:"destravavel", estado:"atencao",
+    rotulo:"Parados por algo que já saiu",
+    porque:"Todos os itens que o travavam estão `feito` ou `descartado` — é trabalho liberado que ninguém foi buscar.",
+    itens: itens.filter(i => pendente(i) && ((i.bloqueadoPor)||[]).length &&
+      i.bloqueadoPor.every(b => ["feito","descartado"].includes(situacaoPorId.get(b)))),
+  });
+  return lista;
+}
+
+function resumo(itens){
+  const porSituacao = {};
+  for(const s of ["aberto","fazendo","bloqueado","feito","descartado"]) porSituacao[s] = 0;
+  for(const i of itens){
+    const s = valorDe(i,"situacao");
+    porSituacao[s] = (porSituacao[s]||0) + 1;
+  }
+  const descartado = porSituacao.descartado || 0;
+  const emJogo = itens.length - descartado;
+  return {
+    total: itens.length, porSituacao, emJogo, descartado,
+    feito: porSituacao.feito || 0,
+    pctFeito: emJogo ? (porSituacao.feito||0) / emJogo : 0,
+    pendente: (porSituacao.aberto||0) + (porSituacao.fazendo||0) + (porSituacao.bloqueado||0),
+    projetos: new Set(itens.map(i => valorDe(i,"projeto"))).size,
+    donos:    new Set(itens.map(i => valorDe(i,"dono"))).size,
+  };
+}
+
+// expostas para o teste dirigir as funções REAIS da página, não cópias delas
+window.__agregacoes = {valorDe, fatiar, colunasDe, contar, matriz, progresso,
+                       envelhecimento, riscos, resumo};
+
+/* ═══ Estado da vista (nada disto é dado; é só o que está na tela) ═══ */
+let dados = {versao:1, geradoEm:"", itens:[]};
+let token = null;
+let modo  = "desconectado";
+let etag  = null, sha = null, vigia = null, conferindo = false, visto = 0;
+let sombra = "linha";                 // linha | absoluto
+const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:""};
+
+const $  = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hoje = () => new Date().toISOString().slice(0,10);
+const nf = n => Number(n).toLocaleString("pt-BR");
+const pc = x => (x*100).toFixed(x >= 0.095 || x === 0 ? 0 : 1).replace(".",",") + "%";
+const fmtData = s => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||""));
+  return m ? `${m[3]}/${m[2]}` : (s||"—");
+};
+const fmtDataLonga = s => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||""));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (s||"—");
+};
+
+function brinde(msg, ruim){
+  const b = $("#brinde"); b.textContent = msg;
+  b.className = "brinde on" + (ruim ? " ruim" : "");
+  clearTimeout(b._t); b._t = setTimeout(() => b.className = "brinde", ruim ? 5200 : 2600);
+}
+
+/* ═══ Leitura do git — o mesmo caminho da tela, só que sem o de volta ═══ */
+
+const b64ParaTexto = b => new TextDecoder("utf-8")
+  .decode(Uint8Array.from(atob(String(b).replace(/\s/g,"")), c => c.charCodeAt(0)));
+
+/* A Contents API só devolve `content` inline até 1 MiB; acima disso responde 200
+   com `encoding:"none"` e `content` vazio, e o `JSON.parse("")` vira "unexpected
+   end of JSON input". Foi o que derrubou a tela em 03/08/2026. O `tarefas.json`
+   já passou de 1 MiB — este caminho é o normal, não a exceção. */
+async function conteudoDe(j){
+  if(j.content && j.encoding !== "none") return b64ParaTexto(j.content);
+  const b = await gh(`/repos/${REPO}/git/blobs/${j.sha}`);
+  if(!b.content) throw new Error(
+    `arquivo de ${(j.size/1048576).toFixed(1)} MB — nem a Blobs API devolveu conteúdo`);
+  return b64ParaTexto(b.content);
+}
+
+/* Único ponto de rede da página. Sem `method`: `fetch` faz GET.
+   Se algum dia alguém precisar escrever daqui, precisará mexer nesta função —
+   e o teste `scripts/testar-painel.mjs` reprova. */
+async function gh(caminho){
+  const r = await fetch(API + caminho, {headers:{
+    "Accept":"application/vnd.github+json",
+    "X-GitHub-Api-Version":"2022-11-28",
+    ...(token ? {"Authorization":"Bearer " + token} : {})
+  }});
+  if(!r.ok){
+    let d = ""; try{ d = (await r.json()).message || ""; }catch(e){}
+    throw new Error(`${r.status} ${r.statusText}${d ? " — " + d : ""}`);
+  }
+  return r.json();
+}
+
+/* 404 da Contents API é ambíguo de propósito: "não existe" e "seu token não
+   enxerga" têm o mesmo corpo. Perguntar ao /repos antes de concluir qualquer
+   coisa evita o pior desfecho — um painel de zeros que parece um backlog vazio. */
+async function porQueNaoAchou(){
+  try{ await gh(`/repos/${REPO}`); return {ausente:true}; }
+  catch(e){
+    const s = String(e);
+    if(s.includes("401")) return {msg:"token inválido ou expirado — o GitHub recusou a credencial (401). Gere outro."};
+    if(s.includes("403")) return {msg:"token válido, mas sem permissão (403) no go-beesiness-regras."};
+    return {msg:"este token NÃO enxerga o go-beesiness-regras. Ou não tem permissão, ou é " +
+                "fine-grained com o pedido ainda PENDENTE de aprovação de um owner. Nada foi " +
+                "lido — o painel não está vazio, ele está cego."};
+  }
+}
+
+async function carregar({silencioso=false}={}){
+  try{
+    const j = await gh(`/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`);
+    sha = j.sha; etag = j.sha;
+    const d = JSON.parse(await conteudoDe(j));
+    if(!Array.isArray(d.itens)) throw new Error("o JSON não tem a chave `itens`");
+    dados = d; modo = "github"; visto = Date.now();
+    entrar(); vigiar();
+    if(!silencioso) brinde(`${nf(dados.itens.length)} itens lidos do git`);
+  }catch(e){
+    if(String(e).includes("404")){
+      const d = await porQueNaoAchou();
+      brinde(d.ausente ? "dados/tarefas.json não existe nesta branch — não há o que mostrar"
+                       : d.msg, true);
+    } else brinde("falhou ao ler: " + e.message, true);
+  }
+}
+
+/* O painel é vivo pelo mesmo motivo da tela: decidir sobre número velho é pior
+   do que não decidir. Com If-None-Match o giro normal custa 304 — nem consome
+   cota. Sem mudança não salva para proteger (o painel não escreve), recarregar
+   é sempre seguro. */
+const INTERVALO = 60000;
+function vigiar(){
+  if(vigia) return;
+  vigia = setInterval(conferirOnline, INTERVALO);
+  setInterval(pulso, 15000);
+  document.addEventListener("visibilitychange", () => { if(!document.hidden) conferirOnline(); });
+  window.addEventListener("online", conferirOnline);
+  pulso();
+}
+async function conferirOnline(){
+  if(modo !== "github" || !token || document.hidden || conferindo) return;
+  conferindo = true;
+  try{
+    const r = await fetch(API + `/repos/${REPO}/contents/${encodeURIComponent(PATH)}?ref=${BRANCH}`, {
+      headers:{ "Accept":"application/vnd.github+json",
+                "X-GitHub-Api-Version":"2022-11-28",
+                "Authorization":"Bearer " + token,
+                ...(etag ? {"If-None-Match":`"${etag}"`} : {}) }});
+    visto = Date.now();
+    if(r.status === 304){ pulso(); return; }
+    if(!r.ok) return;
+    const j = await r.json();
+    if(j.sha === sha){ etag = j.sha; pulso(); return; }
+    await carregar({silencioso:true});
+    brinde("o git andou — o painel recalculou");
+  }catch(e){ /* rede instável não vira alarme; o próximo giro tenta */ }
+  finally{ conferindo = false; pulso(); }
+}
+function pulso(){
+  const s = Math.round((Date.now() - visto)/1000);
+  $("#pillVisto").textContent = visto
+    ? (s < 90 ? `git conferido há ${s}s` : `git conferido há ${Math.round(s/60)} min`)
+    : "—";
+}
+
+/* ═══ Desenho ═══════════════════════════════════════════════════════════════ */
+
+/* dica (tooltip). Enriquece; nunca é o único caminho para o valor — todo
+   gráfico tem a tabela gêmea logo abaixo, e as células trazem o número escrito. */
+const elDica = () => $("#dica");
+function ligarDica(){
+  const mostrar = e => {
+    const alvo = e.target.closest && e.target.closest("[data-dica]");
+    const d = elDica();
+    if(!alvo){ d.className = "dica"; return; }
+    d.innerHTML = alvo.getAttribute("data-dica");
+    d.className = "dica on";
+    const r = alvo.getBoundingClientRect();
+    const w = d.offsetWidth, h = d.offsetHeight;
+    d.style.left = Math.max(6, Math.min(innerWidth - w - 6, r.left + r.width/2 - w/2)) + "px";
+    d.style.top  = (r.top - h - 9 < 6 ? r.bottom + 9 : r.top - h - 9) + "px";
+  };
+  document.addEventListener("pointerover", mostrar);
+  document.addEventListener("focusin", mostrar);
+  document.addEventListener("pointerout", e => { if(!e.relatedTarget || !e.relatedTarget.closest ||
+    !e.relatedTarget.closest("[data-dica]")) elDica().className = "dica"; });
+  document.addEventListener("focusout", () => elDica().className = "dica");
+  addEventListener("scroll", () => elDica().className = "dica", true);
+}
+
+const svg = (w,h,corpo) =>
+  `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" style="max-width:none">${corpo}</svg>`;
+
+/* barra horizontal com ponta arredondada e base quadrada (4px), ≤24px de espessura */
+const barraH = (x,y,w,h,cor,extra="") => {
+  const l = Math.max(0, w);
+  const r = Math.min(4, l/2);
+  return `<rect x="${x}" y="${y}" width="${l}" height="${h}" rx="${r}" fill="${cor}" ${extra}/>` +
+         (l > r ? `<rect x="${x}" y="${y}" width="${r}" height="${h}" fill="${cor}"/>` : "");
+};
+/* coluna vertical: ponta arredondada em cima, quadrada na linha de base */
+const colunaV = (x,y,w,h,cor,extra="") => {
+  const a = Math.max(0, h);
+  const r = Math.min(4, a/2);
+  return `<rect x="${x}" y="${y}" width="${w}" height="${a}" rx="${r}" fill="${cor}" ${extra}/>` +
+         (a > r ? `<rect x="${x}" y="${y+a-r}" width="${w}" height="${r}" fill="${cor}"/>` : "");
+};
+
+const nivelDe = (v, max) => (v <= 0 || max <= 0) ? 0
+  : Math.max(1, Math.min(NIVEIS, Math.ceil(v / max * NIVEIS)));
+
+function tabelaHTML(cabecalho, linhas){
+  return `<table><thead><tr>${cabecalho.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead>` +
+    `<tbody>${linhas.map(l=>`<tr>${l.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+/* ── Mapa de calor ──────────────────────────────────────────────────────────
+   Sombra = magnitude → rampa de UMA cor, claro→escuro. Duas leituras, porque
+   respondem a perguntas diferentes:
+     "% da linha"  — proporção dentro do projeto/dono. É o padrão porque a
+                     pergunta do painel é ONDE dar atenção, e volume bruto faz
+                     o `gobee-jobs` (351 itens) apagar todo o resto.
+     "contagem"    — magnitude absoluta comparável entre linhas.
+   O número escrito na célula é SEMPRE a contagem: a cor não é o único caminho
+   para o valor. ────────────────────────────────────────────────────────────── */
+function desenharCalor(alvoSvg, alvoTab, m, rotuloLinha, mapaCor, aoClicar){
+  const GUT = 176, CW = 96, CH = 32, HH = 46, TOT = 78, PAD = 4;
+  const W = GUT + m.colunas.length*CW + TOT + PAD;
+  const H = HH + m.linhas.length*CH + 10;
+  let s = "";
+
+  /* cabeçalho: ponto de cor + rótulo + total da coluna, em três posições que não
+     se pisam. O ponto fica à ESQUERDA do nome (largura estimada pelo número de
+     caracteres): pôr o ponto junto ao número o cobria — visto no render de 07/08.
+     A cor nunca vai sozinha; ela acompanha um rótulo escrito. */
+  m.colunas.forEach((c,ci) => {
+    const x = GUT + ci*CW + CW/2;
+    const sit = SITUACOES.find(z => z.k === c);
+    const meia = c.length * 3.05;                     // meia-largura do nome a 11px
+    if(sit) s += `<circle cx="${x - meia - 7}" cy="${HH-24}" r="3.5" fill="var(${sit.v})"/>`;
+    s += `<text class="rot-eixo" x="${x}" y="${HH-20}" text-anchor="middle">${esc(c)}</text>`;
+    s += `<text class="num-fraco" x="${x}" y="${HH-6}" text-anchor="middle">${nf(m.totalCol[ci])}</text>`;
+  });
+  s += `<text class="rot-eixo" x="${GUT + m.colunas.length*CW + TOT - PAD}" y="${HH-20}" text-anchor="end">total</text>`;
+  s += `<line class="grade" x1="0" y1="${HH-1}" x2="${W}" y2="${HH-1}"/>`;
+
+  m.linhas.forEach((l,li) => {
+    const y = HH + li*CH;
+    s += `<text class="rot-linha" x="${GUT-12}" y="${y+CH/2+4}" text-anchor="end">${esc(l.chave)}</text>`;
+    l.celulas.forEach((v,ci) => {
+      const base = sombra === "linha" ? l.total : m.maxAbs;
+      const nv = nivelDe(v, base);
+      const x = GUT + ci*CW;
+      const dica = `<b>${esc(l.chave)}</b> · ${esc(m.colunas[ci])}<br>` +
+        `${nf(v)} ${v===1?"item":"itens"} — ${pc(l.total ? v/l.total : 0)} de ${nf(l.total)}`;
+      s += `<g class="cel" tabindex="0" role="button" data-dica="${esc(dica)}" ` +
+           `data-linha="${esc(l.chave)}" data-coluna="${esc(m.colunas[ci])}" ` +
+           `aria-label="${esc(l.chave)} ${esc(m.colunas[ci])}: ${nf(v)} itens">` +
+           `<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${CH-2}" rx="5" ` +
+             `fill="var(--h${nv})" ${nv===0?'stroke-dasharray="0"':""}/>` +
+           `<text x="${x+CW/2}" y="${y+CH/2+4}" text-anchor="middle" ` +
+             `font-size="11.5" font-weight="700" style="font-variant-numeric:tabular-nums" ` +
+             `fill="var(--h${nv}t)">${v ? nf(v) : "·"}</text></g>`;
+    });
+    const xt = GUT + m.colunas.length*CW + TOT - PAD;
+    s += `<text class="num" x="${xt}" y="${y+CH/2+4}" text-anchor="end">${nf(l.total)}</text>`;
+  });
+
+  const leg = escalaHTML();
+  $(alvoSvg).innerHTML = svg(W,H,s) + leg;
+
+  $(alvoTab).innerHTML = tabelaHTML(
+    [rotuloLinha, ...m.colunas, "total", "% feito"],
+    m.linhas.map(l => [esc(l.chave), ...l.celulas.map(nf), `<b>${nf(l.total)}</b>`,
+      pc(l.total ? l.celulas[m.colunas.indexOf("feito")]/l.total : 0)])
+      .concat([[`<b>todos</b>`, ...m.totalCol.map(v=>`<b>${nf(v)}</b>`), `<b>${nf(m.total)}</b>`, ""]]));
+
+  if(aoClicar) $(alvoSvg).querySelectorAll(".cel").forEach(g => {
+    g.onclick = () => aoClicar(g.dataset.linha, g.dataset.coluna);
+    g.onkeydown = e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); g.click(); } };
+  });
+}
+
+function escalaHTML(){
+  const rot = sombra === "linha" ? ["0%","","","","","","100% da linha"]
+                                 : ["0","","","","","","maior célula"];
+  let q = "";
+  for(let i=0;i<=NIVEIS;i++)
+    q += `<span style="width:22px;height:11px;border-radius:3px;display:inline-block;` +
+         `background:var(--h${i});${i===0?"border:1px solid var(--borda-2)":""}"></span>`;
+  return `<div style="display:flex;gap:3px;align-items:center;margin-top:10px;font-size:11px;color:var(--muted)">` +
+         `<span style="margin-right:4px">menos</span>${q}` +
+         `<span style="margin-left:4px">mais — ${esc(rot[NIVEIS])}</span></div>`;
+}
+
+/* ── Progresso (medidor: preenchimento no acento, trilho num degrau claro do
+      MESMO tom — o estado lê na barra inteira, não só na parte pintada) ── */
+function desenharProgresso(alvoSvg, alvoTab, linhas){
+  const GUT = 176, LARG = 300, RH = 28, DIR = 190, PAD = 8;
+  const W = GUT + LARG + DIR, H = linhas.length*RH + PAD;
+  let s = "";
+  linhas.forEach((l,i) => {
+    const y = i*RH + PAD/2, by = y + (RH-14)/2;
+    const w = Math.round(LARG * l.pct);
+    const dica = `<b>${esc(l.chave)}</b><br>${nf(l.feito)} feitos de ${nf(l.emJogo)} em jogo — ` +
+      `${pc(l.pct)}<br>${nf(l.aberto)} abertos · ${nf(l.fazendo)} fazendo · ` +
+      `${nf(l.bloqueado)} bloqueados${l.descartado?` · ${nf(l.descartado)} descartados (fora do denominador)`:""}`;
+    s += `<g data-dica="${esc(dica)}" tabindex="0">` +
+         `<text class="rot-linha" x="${GUT-12}" y="${y+RH/2+4}" text-anchor="end">${esc(l.chave)}</text>` +
+         `<rect x="${GUT}" y="${by}" width="${LARG}" height="14" rx="7" fill="var(--trilho)"/>` +
+         barraH(GUT, by, w, 14, "var(--serie)") +
+         `<text class="num" x="${GUT+LARG+12}" y="${y+RH/2+4}">${pc(l.pct)}</text>` +
+         `<text class="num-fraco" x="${GUT+LARG+64}" y="${y+RH/2+4}">${nf(l.feito)} de ${nf(l.emJogo)} em jogo</text>` +
+         `</g>`;
+  });
+  $(alvoSvg).innerHTML = svg(W,H,s);
+  $(alvoTab).innerHTML = tabelaHTML(
+    ["projeto","% feito","feito","em jogo","aberto","fazendo","bloqueado","descartado","total"],
+    linhas.map(l => [esc(l.chave), `<b>${pc(l.pct)}</b>`, nf(l.feito), nf(l.emJogo),
+                     nf(l.aberto), nf(l.fazendo), nf(l.bloqueado), nf(l.descartado), nf(l.total)]));
+}
+
+/* ── Envelhecimento (colunas por dia; a safra em destaque por ÊNFASE — acento
+      contra um degrau mais claro do mesmo tom — e não por uma cor a mais) ── */
+function desenharIdade(alvoSvg, alvoTab, e){
+  const MAXCOL = 30;
+  let datas = e.datas;
+  let dobrado = null;
+  if(datas.length > MAXCOL){
+    const corte = datas.length - MAXCOL + 1;
+    dobrado = {rotulo:`antes de ${fmtData(datas[corte].data)}`,
+               n: datas.slice(0,corte).reduce((s,d)=>s+d.n,0)};
+    datas = datas.slice(corte);
+  }
+  const cols = (dobrado ? [{data:dobrado.rotulo, n:dobrado.n, dobra:true}] : []).concat(datas);
+  const BW = 26, GAP = 12, ESQ = 44, TOPO = 20, ALT = 150, BASE = TOPO + ALT;
+  const W = ESQ + cols.length*(BW+GAP) + 12, H = BASE + 46;
+  const max = Math.max(1, ...cols.map(c=>c.n));
+  let s = "";
+  // grade: três linhas horizontais, hairline sólido
+  for(let k=0;k<=2;k++){
+    const y = TOPO + ALT*(k/2), v = Math.round(max*(1-k/2));
+    s += `<line class="grade" x1="${ESQ}" y1="${y}" x2="${W-6}" y2="${y}"/>` +
+         `<text class="num-fraco" x="${ESQ-8}" y="${y+4}" text-anchor="end">${nf(v)}</text>`;
+  }
+  cols.forEach((c,i) => {
+    const h = Math.round(ALT * c.n / max);
+    const x = ESQ + i*(BW+GAP) + GAP/2;
+    const eSafra = !c.dobra && c.data === e.safra;
+    const cor = eSafra ? "var(--serie)" : "var(--serie-fraca)";
+    const dica = c.dobra ? `${esc(c.data)}<br>${nf(c.n)} itens`
+      : `<b>${fmtDataLonga(c.data)}</b><br>${nf(c.n)} itens tocados pela última vez neste dia` +
+        (eSafra ? "<br><b>É a safra da varredura</b> — nunca reconciliados." : "");
+    s += `<g tabindex="0" data-dica="${esc(dica)}">` +
+         colunaV(x, BASE-h, BW, h, cor) +
+         `<text class="${eSafra?"num":"num-fraco"}" x="${x+BW/2}" y="${BASE-h-6}" text-anchor="middle">${nf(c.n)}</text>` +
+         `<text class="rot-eixo" x="${x+BW/2}" y="${BASE+16}" text-anchor="middle">${esc(c.dobra?"antes":fmtData(c.data))}</text>` +
+         (eSafra ? `<text class="rot-eixo" x="${x+BW/2}" y="${BASE+30}" text-anchor="middle" fill="var(--serie)" font-weight="700">safra</text>` : "") +
+         `</g>`;
+  });
+  s += `<line class="grade" x1="${ESQ}" y1="${BASE}" x2="${W-6}" y2="${BASE}" stroke="var(--borda)"/>`;
+  $(alvoSvg).innerHTML = svg(W,H,s);
+
+  $("#baldes").innerHTML =
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">` +
+    e.baldes.map(b => `<span class="pill" style="background:var(--bg);border-color:var(--borda-2);` +
+      `color:var(--texto);font-weight:600">${esc(b.rotulo)}: <b style="color:var(--tinta)">${nf(b.n)}</b></span>`).join("") +
+    `</div>`;
+
+  $(alvoTab).innerHTML = tabelaHTML(["dia","itens","% do total","idade em dias"],
+    e.datas.map(d => [fmtDataLonga(d.data), nf(d.n),
+      pc(e.datas.reduce((s,x)=>s+x.n,0) ? d.n/e.datas.reduce((s,x)=>s+x.n,0) : 0),
+      nf(Math.round((Date.parse(e.referencia+"T00:00:00Z")-Date.parse(d.data+"T00:00:00Z"))/86400000))])
+    .concat(e.semData ? [["sem data válida", nf(e.semData), "", ""]] : []));
+}
+
+/* ── Distribuição (uma série → UMA cor; nunca sombrear a barra pelo valor) ── */
+function desenharDistrib(alvoSvg, alvoTab, itens, chave, rotulo, gut){
+  const GUT = gut || 138, LARG = 200, RH = 24, DIR = 96, PAD = 6;
+  const linhas = contar(itens, chave);
+  const total = linhas.reduce((s,l)=>s+l.n, 0) || 1;
+  const max = Math.max(1, ...linhas.map(l=>l.n));
+  const W = GUT + LARG + DIR, H = linhas.length*RH + PAD;
+  let s = "";
+  linhas.forEach((l,i) => {
+    const y = i*RH + PAD/2, by = y + (RH-14)/2;
+    s += `<g tabindex="0" data-dica="${esc(`<b>${esc(l.chave)}</b><br>${nf(l.n)} itens — ${pc(l.n/total)}`)}">` +
+         `<text class="rot-linha" x="${GUT-10}" y="${y+RH/2+4}" text-anchor="end">${esc(l.chave)}</text>` +
+         barraH(GUT, by, Math.round(LARG*l.n/max), 14, "var(--serie)") +
+         `<text class="num" x="${GUT+Math.round(LARG*l.n/max)+9}" y="${y+RH/2+4}">${nf(l.n)}</text>` +
+         `<text class="num-fraco" x="${GUT+LARG+52}" y="${y+RH/2+4}" text-anchor="end">${pc(l.n/total)}</text>` +
+         `</g>`;
+  });
+  $(alvoSvg).innerHTML = svg(W,H,s);
+  $(alvoTab).innerHTML = tabelaHTML([rotulo,"itens","% da fatia"],
+    linhas.map(l => [esc(l.chave), nf(l.n), pc(l.n/total)]));
+}
+
+/* ═══ Render ════════════════════════════════════════════════════════════════ */
+
+const ICONE = {bom:"✔", atencao:"▲", critico:"■"};
+
+function tile(rot, val, sub, estado, classe){
+  const marca = estado ? `<span class="est ${estado}" aria-hidden="true">${ICONE[estado]}</span>` : "";
+  return `<div class="tile ${classe||""}"><div class="rot">${esc(rot)}</div>` +
+         `<div class="val">${marca}${val}</div>` +
+         `<div class="sub">${sub||""}</div></div>`;
+}
+
+function render(){
+  const todos = dados.itens;
+  const itens = fatiar(todos, filtro);
+  const r = resumo(itens);
+  const e = envelhecimento(itens, hoje());
+  const rs = riscos(itens, todos);
+
+  const filtrando = Object.values(filtro).some(Boolean);
+  $("#recorte").textContent = filtrando
+    ? `${nf(itens.length)} de ${nf(todos.length)} itens nesta fatia`
+    : `${nf(todos.length)} itens · ${r.projetos} projetos · ${r.donos} donos`;
+
+  /* ── faixa de números. UM número herói por vista. ── */
+  const criticos = rs.filter(x => x.estado === "critico").reduce((s,x) => s + x.itens.length, 0);
+  $("#kpis").innerHTML =
+    tile("Itens na fatia", nf(r.total),
+      `${nf(r.emJogo)} em jogo · ${nf(r.descartado)} descartados`, null, "heroi") +
+    tile("Feito", pc(r.pctFeito),
+      `${nf(r.feito)} de ${nf(r.emJogo)} em jogo`, null) +
+    tile("Ainda por fazer", nf(r.pendente),
+      `${nf(r.porSituacao.aberto)} abertos · ${nf(r.porSituacao.fazendo)} fazendo`, null) +
+    tile("Bloqueados", nf(r.porSituacao.bloqueado),
+      r.porSituacao.bloqueado ? "dependem de terceiro ou decisão" : "nenhum",
+      r.porSituacao.bloqueado ? "atencao" : "bom") +
+    tile(`Parados desde ${fmtDataLonga(e.safra)}`, nf(e.naSafra),
+      e.naSafra ? `${pc(e.pctSafra)} da fatia · ${nf(e.idadeDaSafra)} dias sem ninguém reconciliar`
+                : "nenhum item na safra da varredura",
+      e.pctSafra >= 0.25 ? "critico" : e.naSafra ? "atencao" : "bom",
+      e.pctSafra >= 0.25 ? "alerta" : "") +
+    tile("Violações do contrato", nf(criticos),
+      criticos ? "regras do dados/README.md quebradas" : "o validador passa nesta fatia",
+      criticos ? "critico" : "bom", criticos ? "alerta" : "");
+
+  /* ── 1 · projeto × situação ── */
+  const colsSit = colunasDe(todos, "situacao", ORDEM_SITUACAO);
+  const m1 = matriz(itens, "projeto", "situacao", colsSit);
+  $("#legCalor1").innerHTML =
+    `Linhas ordenadas por volume. A sombra diz <strong>${sombra === "linha"
+      ? "quanto daquele projeto está naquela situação" : "o tamanho absoluto da célula"}</strong>; ` +
+    `o número na célula é sempre a contagem. ` +
+    (sombra === "linha"
+      ? `Linha pequena satura fácil — 100% de 1 item fica tão escuro quanto 100% de 300; ` +
+        `o número na célula e a coluna <em>total</em> dizem o peso. `
+      : ``) +
+    `Clique numa célula para filtrar tudo por ela.`;
+  desenharCalor("#calor1", "#tabCalor1", m1, "projeto", null, (linha, coluna) => {
+    filtro.projeto = filtro.projeto === linha ? "" : linha;
+    filtro.situacao = filtro.situacao === coluna ? "" : coluna;
+    sincronizarFiltros(); render();
+  });
+
+  /* ── 2 · dono × situação ──────────────────────────────────────────────────
+     ESCOLHIDO em vez de projeto × prioridade, e a razão foi medida em 07/08:
+       · `prioridade` quase não varia — 51% do acervo é `alta`, e nenhum projeto
+         foge da faixa 46–79%. Um mapa em que todas as células têm o mesmo tom
+         não informa; informa que o campo perdeu poder de discriminar.
+       · `dono` varia muito e aponta o dedo: o `cto` segura 205 itens, 67% ainda
+         abertos e **27 dos 31 bloqueios do acervo inteiro**; `equipe-zap` tem
+         22 itens e nenhum feito. É exatamente a pergunta "onde dar atenção".
+     A distribuição de prioridade continua na página, como barra — ela cabe numa
+     dimensão. ─────────────────────────────────────────────────────────────── */
+  const m2 = matriz(itens, "dono", "situacao", colsSit);
+  $("#legCalor2").innerHTML =
+    `O corte que mais separa. <strong>Escolhido em vez de projeto × prioridade</strong> porque ` +
+    `<code>prioridade</code> quase não varia entre projetos — ${pc(
+      itens.length ? itens.filter(i=>valorDe(i,"prioridade")==="alta").length/itens.length : 0)} ` +
+    `da fatia é <code>alta</code> — enquanto <code>dono</code> separa muito.`;
+  desenharCalor("#calor2", "#tabCalor2", m2, "dono", null, (linha, coluna) => {
+    filtro.dono = filtro.dono === linha ? "" : linha;
+    filtro.situacao = filtro.situacao === coluna ? "" : coluna;
+    sincronizarFiltros(); render();
+  });
+
+  /* ── 3 · progresso ── */
+  desenharProgresso("#progresso", "#tabProgresso", progresso(itens, "projeto"));
+
+  /* ── 4 · envelhecimento ── */
+  $("#legIdade").innerHTML = e.safra
+    ? `Cada coluna é um dia. A coluna em destaque é a <strong>safra da varredura</strong> ` +
+      `(${fmtDataLonga(e.safra)}): <strong>${nf(e.naSafra)} itens — ${pc(e.pctSafra)} da fatia — ` +
+      `nunca foram tocados desde então</strong>, ${nf(e.idadeDaSafra)} dias atrás. ` +
+      `A §3.11 r.7 manda atualizar <em>na hora</em>; isto é a medida de quanto isso não acontece.`
+    : `Sem data válida nesta fatia.`;
+  desenharIdade("#idade", "#tabIdade", e);
+
+  /* ── 5 · riscos ── */
+  $("#riscos").innerHTML = rs.map(b => {
+    const n = b.itens.length;
+    const estado = n === 0 ? "bom" : b.estado;
+    const corpo = n === 0
+      ? `<div class="gate-ok"><span class="est bom" aria-hidden="true">✔</span>` +
+        `<span><strong>Nenhum</strong> — a regra está cumprida nesta fatia.</span></div>`
+      : `<div class="risco"><ul>` + b.itens.slice(0,120).map(i =>
+          `<li><span class="id">${esc(i.id)}</span>` +
+          `<span class="tt" title="${esc(i.titulo)}">${esc(i.titulo)}</span>` +
+          `<span class="pj">${esc(valorDe(i,"projeto"))} · ${esc(valorDe(i,"dono"))}</span></li>`).join("") +
+        (n > 120 ? `<li style="border:0;color:var(--muted)">… e mais ${nf(n-120)}</li>` : "") +
+        `</ul></div>`;
+    return `<article class="card" style="margin:0${n?";border-color:var(--"+(estado==="critico"?"critico":"atencao")+")":""}">` +
+      `<div class="rot" style="font-size:11px;font-weight:700;text-transform:uppercase;` +
+      `letter-spacing:.055em;color:var(--muted)">${esc(b.rotulo).replace(/`([^`]+)`/g,"<code>$1</code>")}</div>` +
+      `<div class="val" style="font-size:30px;font-weight:700;color:var(--tinta);line-height:1.2;margin:2px 0 4px">` +
+      `<span class="est ${estado}" aria-hidden="true">${ICONE[estado]}</span>${nf(n)}</div>` +
+      `<div class="sub" style="font-size:11.5px;color:var(--muted);line-height:1.5">${esc(b.porque)}</div>` +
+      corpo + `</article>`;
+  }).join("");
+
+  /* ── 6 · distribuições ── */
+  desenharDistrib("#dOrigem", "#tabOrigem", itens, "origem.tipo", "origem.tipo", 116);
+  desenharDistrib("#dComponente", "#tabComponente", itens, "componente", "componente", 156);
+  desenharDistrib("#dPrioridade", "#tabPrioridade", itens, "prioridade", "prioridade", 96);
+  const compCanon = ["backend","frontend","reportgenerator","infra","docs","produto"];
+  const fora = contar(itens, "componente").filter(c => !compCanon.includes(c.chave));
+  $("#legComponente").innerHTML = fora.length
+    ? `O contrato lista seis componentes; a fatia usa ${nf(contar(itens,"componente").length)}. ` +
+      `<strong>${nf(fora.length)} fora da lista</strong> (${fora.slice(0,4).map(c=>`<code>${esc(c.chave)}</code>`).join(", ")}${fora.length>4?"…":""}) — ` +
+      `conjunto fechado por convenção não é conjunto fechado.`
+    : `Os seis componentes do contrato.`;
+  $("#legPrioridade").innerHTML =
+    `Campo de sinal fraco: veja o quanto se concentra em <code>alta</code>.`;
+}
+
+/* ═══ Filtros — uma faixa só, acima de tudo que ela recorta ═══ */
+function preencherFiltros(){
+  const põe = (sel, chave, canonicas) => {
+    const el = $(sel), atual = el.value;
+    const vals = canonicas
+      ? colunasDe(dados.itens, chave, canonicas).filter(v => dados.itens.some(i => valorDe(i,chave) === v))
+      : contar(dados.itens, chave).map(c => c.chave);
+    el.innerHTML = `<option value="">${el.dataset.todos}</option>` +
+      vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    el.value = atual;
+  };
+  põe("#fProjeto","projeto"); põe("#fDono","dono"); põe("#fComponente","componente");
+  põe("#fPrioridade","prioridade", ORDEM_PRIORIDADE);
+  põe("#fSituacao","situacao", ORDEM_SITUACAO);
+}
+function sincronizarFiltros(){
+  $("#fProjeto").value = filtro.projeto; $("#fDono").value = filtro.dono;
+  $("#fComponente").value = filtro.componente; $("#fPrioridade").value = filtro.prioridade;
+  $("#fSituacao").value = filtro.situacao;
+}
+
+function entrar(){
+  $("#capa").classList.add("oculto");
+  ["#topo","#filtros","#main"].forEach(s => $(s).classList.remove("oculto"));
+  $("#pillFonte").textContent = `${REPO}@${BRANCH}`;
+  $("#irTela").href = "index.html" + location.search;
+  preencherFiltros(); sincronizarFiltros(); render();
+}
+
+/* ═══ Token — mesmo fluxo da tela, mesmas travas ═══ */
+const PERIGOSOS = {
+  "delete_repo":"APAGAR repositórios", "admin:org":"administrar a organização",
+  "write:org":"escrever na organização", "admin:repo_hook":"administrar webhooks",
+  "admin:enterprise":"administrar a enterprise", "admin:public_key":"gerir chaves SSH da conta",
+  "admin:gpg_key":"gerir chaves GPG da conta", "write:packages":"publicar pacotes",
+  "user":"alterar o perfil e os e-mails da conta",
+};
+async function conferirEscopos(t){
+  try{
+    const r = await fetch(API + `/repos/${REPO}`, {headers:{
+      "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28",
+      "Authorization":"Bearer " + t }});
+    const bruto = r.headers.get("X-OAuth-Scopes");
+    if(bruto === null) return {tipo:"fine-grained"};
+    const es = bruto.split(",").map(s => s.trim()).filter(Boolean);
+    return {tipo:"classico", escopos:es, temRepo:es.includes("repo"),
+            extras:es.filter(x => PERIGOSOS[x])};
+  }catch(e){ return {tipo:"indeterminado"}; }
+}
+
+$("#conectar").onclick = async () => {
+  const t = $("#tok").value.trim();
+  if(!t) return brinde("cole o token — sem ele o repositório privado não abre", true);
+  const d = await conferirEscopos(t);
+  const av = $("#avisoEscopo");
+  av.className = "oculto"; av.innerHTML = "";
+  if(d.tipo === "classico"){
+    if(!d.temRepo){
+      av.className = "avisoEscopo ruim";
+      av.innerHTML = `Este token clássico <strong>não tem o escopo <code>repo</code></strong> — ele tem ` +
+        `<code>${esc(d.escopos.join(", ") || "nenhum")}</code>. Sem <code>repo</code> ele não lê um ` +
+        `repositório privado, e o GitHub responde 404 como se o arquivo não existisse.`;
+      return;
+    }
+    if(d.extras.length){
+      av.className = "avisoEscopo";
+      av.innerHTML = `⚠️ Este token vai além do necessário. Além de <code>repo</code>, ele pode ` +
+        `<strong>${d.extras.map(x => esc(PERIGOSOS[x])).join("</strong>, <strong>")}</strong> ` +
+        `(<code>${esc(d.extras.join(", "))}</code>). O painel <strong>só lê</strong>. ` +
+        `Se ele vazar, vaza tudo isso junto — vale gerar outro só com <code>repo</code>.`;
+    }
+  }
+  token = t;
+  if($("#lembrar").checked) try{ localStorage.setItem("gb_tok", t); }catch(e){}
+  await carregar();
+};
+$("#tok").onkeydown = e => { if(e.key === "Enter") $("#conectar").click(); };
+
+$("#recarregar").onclick = () => carregar();
+$("#tema").onclick = () => {
+  const d = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = d;
+  try{ localStorage.setItem("gb_tema", d); }catch(e){}
+  render();                         // as tintas de célula vêm de var(--hNt): só o SVG precisa repintar
+};
+$("#sombraLinha").onclick = () => { sombra = "linha";
+  $("#sombraLinha").classList.add("on"); $("#sombraAbs").classList.remove("on"); render(); };
+$("#sombraAbs").onclick = () => { sombra = "absoluto";
+  $("#sombraAbs").classList.add("on"); $("#sombraLinha").classList.remove("on"); render(); };
+[["#fProjeto","projeto"],["#fDono","dono"],["#fComponente","componente"],
+ ["#fPrioridade","prioridade"],["#fSituacao","situacao"]].forEach(([sel,chave]) => {
+  const el = $(sel);
+  el.dataset.todos = el.options[0].textContent;
+  el.onchange = () => { filtro[chave] = el.value; render(); };
+});
+$("#limpar").onclick = () => {
+  Object.keys(filtro).forEach(k => filtro[k] = "");
+  sincronizarFiltros(); render();
+};
+document.onkeydown = e => { if(e.key === "Escape") elDica().className = "dica"; };
+
+ligarDica();
+
+/* ── abertura ── */
+try{
+  const t = localStorage.getItem("gb_tema"); if(t) document.documentElement.dataset.theme = t;
+  const k = localStorage.getItem("gb_tok");
+  if(k){ $("#tok").value = k; $("#lembrar").checked = true; token = k; carregar(); }
+}catch(e){}
+</script>
+</body>
+</html>
