@@ -135,6 +135,20 @@ main{padding:18px;max-width:1500px;margin:0 auto}
 .est.bom{color:var(--bom)} .est.atencao{color:var(--atencao)} .est.critico{color:var(--critico)}
 .tile.alerta{border-color:var(--critico)}
 
+/* ── Faixa do acervo ─────────────────────────────────────────────────────────
+   Tracejada e sem preenchimento de propósito: os tiles acima são a fila viva, e
+   qualquer semelhança visual com eles convidaria a somar as duas coisas — que é
+   exatamente o que o CEO pediu para parar de acontecer em 10/08/2026. ─────── */
+.faixa-acervo{display:flex;align-items:center;gap:11px;margin-bottom:14px;padding:11px 14px;
+  border:1px dashed var(--borda-2);border-radius:var(--r);background:transparent;
+  font-size:12.5px;color:var(--muted);line-height:1.5}
+.faixa-acervo strong{color:var(--tinta)}
+.faixa-acervo .sub2{display:block;font-size:11px;color:var(--fraco);margin-top:1px}
+.faixa-acervo .espaco2{flex:1}
+.faixa-acervo code{font-family:var(--mono);font-size:11px}
+.marca-acervo{width:11px;height:11px;flex:none;border-radius:2px;
+  background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 4px)}
+
 /* ── Tabela gêmea (todo gráfico tem uma) ── */
 details.tab{margin-top:10px;border-top:1px solid var(--borda-2);padding-top:8px}
 details.tab summary{cursor:pointer;font-size:11.5px;font-weight:700;color:var(--muted);
@@ -291,6 +305,7 @@ svg text{font:inherit}
 <main class="oculto" id="main">
 
   <section class="kpis" id="kpis"></section>
+  <section id="acervo"></section>
 
   <!-- 1. a peça central -->
   <article class="card">
@@ -616,9 +631,23 @@ function resumo(itens){
   };
 }
 
+/* ── O ACERVO não é fila de trabalho ─────────────────────────────────────────
+   Decisão do CEO, 10/08/2026: o que é histórico sai do total de tarefas e ganha
+   contagem separada. O corte é o campo `projeto`, NÃO o prefixo do id — dos 59
+   cards `HIST-`, 29 vivem em outros projetos e são trabalho vivo (o bug do nome
+   social, o relatório com a linguagem de outro cliente, a idade mínima de 14
+   anos). Cortar por prefixo esconderia defeito — a auditoria de 07/08/2026 já
+   tinha escrito a regra: quem classifica é o campo `projeto`, e o prefixo do id é
+   artefato de importação.
+   ⚠️ Sem citar id de card aqui: o `testar-selects-e-acervo.mjs` guarda o corte, e
+      o `testar-painel.mjs` proíbe QUALQUER id da fila no HTML — é assim que ele
+      prova que o painel não embute dado. ─────────────────────────────────────*/
+const ACERVO = "historico";
+const ehAcervo = i => valorDe(i,"projeto") === ACERVO;
+
 // expostas para o teste dirigir as funções REAIS da página, não cópias delas
 window.__agregacoes = {valorDe, fatiar, colunasDe, contar, matriz, progresso,
-                       envelhecimento, riscos, resumo};
+                       envelhecimento, riscos, resumo, ehAcervo};
 
 /* ═══ Estado da vista (nada disto é dado; é só o que está na tela) ═══ */
 let dados = {versao:1, geradoEm:"", itens:[]};
@@ -631,7 +660,11 @@ const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:""};
 const $  = s => document.querySelector(s);
 const esc = s => String(s??"").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const hoje = () => new Date().toISOString().slice(0,10);
+/* BRT, não UTC — `toISOString()` vira o dia às 21:00 BRT e o painel mede
+   ENVELHECIMENTO em dias: um dia a mais aparecia toda noite. §3.2.14-bis
+   (10/08/2026). */
+const hoje = () => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo"})
+                     .format(new Date());
 const nf = n => Number(n).toLocaleString("pt-BR");
 const pc = x => (x*100).toFixed(x >= 0.095 || x === 0 ? 0 : 1).replace(".",",") + "%";
 const fmtData = s => {
@@ -705,7 +738,11 @@ async function carregar({silencioso=false}={}){
     if(!Array.isArray(d.itens)) throw new Error("o JSON não tem a chave `itens`");
     dados = d; modo = "github"; visto = Date.now();
     entrar(); vigiar();
-    if(!silencioso) brinde(`${nf(dados.itens.length)} itens lidos do git`);
+    if(!silencioso){
+      const nAc = dados.itens.filter(ehAcervo).length;
+      brinde(`${nf(dados.itens.length - nAc)} tarefas lidas do git`
+             + (nAc ? ` · ${nf(nAc)} de acervo` : ""));
+    }
   }catch(e){
     if(String(e).includes("404")){
       const d = await porQueNaoAchou();
@@ -999,21 +1036,27 @@ function tile(rot, val, sub, estado, classe){
 }
 
 function render(){
-  const todos = dados.itens;
+  /* O acervo sai ANTES de qualquer agregação: todo número deste painel existe
+     para o gestor decidir onde botar energia, e não se bota energia no que já
+     aconteceu. Ele não some — vira o bloco próprio logo abaixo dos números. */
+  const acervo = dados.itens.filter(ehAcervo);
+  const todos  = dados.itens.filter(i=>!ehAcervo(i));
   const itens = fatiar(todos, filtro);
   const r = resumo(itens);
   const e = envelhecimento(itens, hoje());
   const rs = riscos(itens, todos);
+  const rAc = resumo(acervo);
 
   const filtrando = Object.values(filtro).some(Boolean);
-  $("#recorte").textContent = filtrando
-    ? `${nf(itens.length)} de ${nf(todos.length)} itens nesta fatia`
-    : `${nf(todos.length)} itens · ${r.projetos} projetos · ${r.donos} donos`;
+  $("#recorte").textContent = (filtrando
+    ? `${nf(itens.length)} de ${nf(todos.length)} tarefas nesta fatia`
+    : `${nf(todos.length)} tarefas · ${r.projetos} projetos · ${r.donos} donos`)
+    + (acervo.length ? ` · ${nf(acervo.length)} de acervo, fora da conta` : "");
 
   /* ── faixa de números. UM número herói por vista. ── */
   const criticos = rs.filter(x => x.estado === "critico").reduce((s,x) => s + x.itens.length, 0);
   $("#kpis").innerHTML =
-    tile("Itens na fatia", nf(r.total),
+    tile("Tarefas na fatia", nf(r.total),
       `${nf(r.emJogo)} em jogo · ${nf(r.descartado)} descartados`, null, "heroi") +
     tile("Feito", pc(r.pctFeito),
       `${nf(r.feito)} de ${nf(r.emJogo)} em jogo`, null) +
@@ -1030,6 +1073,24 @@ function render(){
     tile("Violações do contrato", nf(criticos),
       criticos ? "regras do dados/README.md quebradas" : "o validador passa nesta fatia",
       criticos ? "critico" : "bom", criticos ? "alerta" : "");
+
+  /* ── Acervo: contagem separada, e ela não entra em nenhum número acima ──────
+     Fica DEPOIS dos KPIs e não entre eles de propósito: dentro da faixa ele seria
+     lido como mais um indicador de andamento, e a única coisa que ele mede é
+     "quanto do que já aconteceu está registrado". O filtro do painel não o toca —
+     ele é o acervo inteiro, sempre, senão a contagem separada mentiria na fatia. */
+  $("#acervo").innerHTML = acervo.length ? `<div class="faixa-acervo">
+      <span class="marca-acervo" aria-hidden="true"></span>
+      <div><strong>${nf(acervo.length)} ${acervo.length===1?"item":"itens"} de histórico</strong>
+        — <b>não são tarefas a fazer</b> e ficam fora de todos os números acima.
+        <span class="sub2">${nf(rAc.pendente)} sem conclusão · ${nf(rAc.feito)} concluídos ·
+        projeto <code>${esc(ACERVO)}</code></span></div>
+      <div class="espaco2"></div>
+      <button class="btn" id="verAcervo">ver na lista</button>
+    </div>` : "";
+  const bAc = $("#verAcervo");
+  if(bAc) bAc.onclick = () => window.open(
+    `./index.html?projeto=${encodeURIComponent(ACERVO)}`, "_blank", "noopener");
 
   /* ── 1 · projeto × situação ── */
   const colsSit = colunasDe(todos, "situacao", ORDEM_SITUACAO);
@@ -1122,11 +1183,15 @@ function render(){
 
 /* ═══ Filtros — uma faixa só, acima de tudo que ela recorta ═══ */
 function preencherFiltros(){
+  /* Sem o acervo, pelo mesmo motivo dos números: `historico` na lista de projetos
+     convidaria a filtrar por ele e ver todos os gráficos zerados — o painel mede
+     andamento, e acervo não anda. Ele tem o bloco próprio logo abaixo dos KPIs. */
+  const base = dados.itens.filter(i=>!ehAcervo(i));
   const põe = (sel, chave, canonicas) => {
     const el = $(sel), atual = el.value;
     const vals = canonicas
-      ? colunasDe(dados.itens, chave, canonicas).filter(v => dados.itens.some(i => valorDe(i,chave) === v))
-      : contar(dados.itens, chave).map(c => c.chave);
+      ? colunasDe(base, chave, canonicas).filter(v => base.some(i => valorDe(i,chave) === v))
+      : contar(base, chave).map(c => c.chave);
     el.innerHTML = `<option value="">${el.dataset.todos}</option>` +
       vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
     el.value = atual;

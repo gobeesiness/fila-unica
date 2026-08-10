@@ -78,6 +78,20 @@ main{padding:18px}
 .lista{padding:9px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 260px);overflow-y:auto}
 .vazio{padding:22px 13px;color:var(--fraco);font-size:12.5px;text-align:center}
 
+/* ── Coluna do acervo ────────────────────────────────────────────────────────
+   O destaque é por CONTRASTE DE NATUREZA, não por mais uma cor de situação: se
+   ela ganhasse um ponto colorido como as outras cinco, leria-se como uma sexta
+   situação — que é justamente o que ela não é. Daí a borda tracejada (nada aqui
+   está "em curso"), o fundo lavado e a marca listrada. ─────────────────────── */
+.coluna.acervo{border-style:dashed;border-color:var(--borda-2);background:transparent;opacity:.92}
+.coluna.acervo>h3{color:var(--muted);background:linear-gradient(0deg,transparent,rgba(127,127,127,.05))}
+.coluna.acervo .item{background:transparent;border-style:dashed}
+.marca-acervo{width:9px;height:9px;flex:none;border-radius:2px;
+  background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 4px)}
+.nota-acervo{margin:0;padding:10px 13px;border-top:1px dashed var(--borda-2);
+  font-size:11px;line-height:1.6;color:var(--fraco)}
+.nota-acervo code{font-family:var(--mono);font-size:10.5px}
+
 .item{border:1px solid var(--borda-2);border-radius:9px;padding:10px 11px;background:var(--card);
   cursor:pointer;transition:.12s;border-left:3px solid transparent}
 .item:hover{border-color:var(--mel-600);border-left-color:var(--mel);box-shadow:var(--sombra);transform:translateY(-1px)}
@@ -301,8 +315,40 @@ const SITUACOES = [
    RN-029 — a diretoria, que confirma operação crítica em dupla verificação. ── */
 const DONOS = ["cto","c-level","arquiteto","equipe-jobs","equipe-mensageria",
                "equipe-hive","equipe-financeiro","equipe-queen","equipe-propolis",
-               "equipe-zap","equipe-leads","terceiro"];
-const COMPONENTES = ["backend","frontend","reportgenerator","infra","docs","produto"];
+               "equipe-zap","equipe-leads","terceiro","agente"];
+/* `agente` entrou em 10/08: dois itens do ARIPUÁ já o usavam (`PAGAMENTOS-048` e
+   `-049`, trabalho executado por agente e não por equipe) e o `testar-tela-criacao`
+   acusava o órfão desde então. É o MESMO defeito dos outros dois selects, no campo
+   que já tinha a trava — prova de que a trava de comportamento não dispensa manter
+   a lista canônica em dia: `opcoesDono()` salvava o item aberto, mas quem fosse
+   ATRIBUIR `agente` a um item novo não achava a opção. */
+/* ── Componentes ─────────────────────────────────────────────────────────────
+   Espelha `COMPONENTES` do `scripts/validar-tarefas.py`. As duas listas TEM de
+   andar juntas, e o `scripts/testar-selects-da-tela.mjs` reprova se separarem.
+   `arquitetura` e `regra-de-negocio` faltavam aqui e o dado JA os usava: 18
+   itens perdiam o campo ao passar pela gaveta (`SUITE-035`, medido 10/08). ── */
+const COMPONENTES = ["backend","frontend","reportgenerator","infra","docs","produto",
+                     "arquitetura","regra-de-negocio"];
+
+/* Espelha `TIPOS_ORIGEM` do validador. Os tres ultimos entraram pela D-2
+   (03/08/2026) e nunca chegaram aqui: 123 itens caiam para `reuniao` ao serem
+   salvos — e `reuniao` E valido, entao os dois gates aprovavam a troca. ── */
+const TIPOS_ORIGEM = ["reuniao","documento","pr","mesa","incidente","codigo",
+                      "achado","issue","direcao"];
+
+/* ── O ACERVO nao e fila de trabalho ─────────────────────────────────────────
+   Decisao do CEO, 10/08/2026: "os cards que se referem a historico ... nao sao
+   tarefas a fazer. Devem ser removidas do total de tarefas ... contagem separada."
+
+   🔑 O corte e pelo campo `projeto`, NAO pelo prefixo do id — e isso foi medido,
+   nao escolhido por gosto. Existem 59 cards `HIST-` e 29 vivem em OUTROS projetos
+   porque sao trabalho VIVO de origem antiga: `HIST-038` (bug do nome social),
+   `HIST-041` (o relatorio sai com a linguagem de outro cliente) e `HIST-037`
+   (idade minima de 14 anos no cadastro). Cortar por prefixo esconderia dois bugs
+   e um item de conformidade. A regra ja estava escrita no `SUITE-038`: "o prefixo
+   do id NAO e fonte de classificacao — quem classifica e o campo `projeto`". ── */
+const ACERVO = "historico";
+const ehAcervo = i => i.projeto === ACERVO;
 
 /* Famílias de id que NÃO servem para item novo: nasceram de importação
    (a planilha, o histórico, os lotes) ou são código antigo de campanha. Sugerir
@@ -334,20 +380,44 @@ let vigia  = null;          // handle do setInterval, para não ligar dois
 let conferindo = false;     // um giro por vez — aba lenta não empilha requisição
 let visto  = 0;             // quando o git foi conferido pela última vez
 let sel    = null;          // item aberto na gaveta
-const filtro = {q:"", projeto:"", dono:"", componente:"", alta:false, semProva:false};
+/* `?projeto=` vem do botão "ver na lista" do painel. Sem isto o botão prometeria
+   um recorte e entregaria a fila inteira — que é o defeito do `PROPOLIS-055`
+   (front chamando o que o outro lado não tem) na sua versão barata. */
+const filtro = {q:"", projeto:new URLSearchParams(location.search).get("projeto")||"",
+                dono:"", componente:"", alta:false, semProva:false};
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s??"").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const hoje = () => new Date().toISOString().slice(0,10);
+/* 🔴 A data e a de QUEM CLICOU, e ela e BRT — nao a do relogio UTC.
+   `toISOString()` devolve UTC sempre: entre 21:00 e 23:59 BRT o UTC ja virou o
+   dia, e um item salvo 21:30 de segunda ficava carimbado terca. Virou violacao
+   explicita em 10/08/2026 com a §3.2.14-bis ("a hora da casa e BRT, e carimbo
+   sem fuso le-se BRT"). `en-CA` porque e o unico locale que ja formata ISO
+   (`2026-08-10`), que e o formato de 100% do arquivo. `SUITE-047`. */
+const hoje = () => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo"})
+                     .format(new Date());
 
-/* Nunca ofereça menos opções do que o dado já tem. Ver a nota em DONOS. */
-function opcoesDono(atual){
-  const l = [...DONOS];
-  if(atual && !l.includes(atual)) l.push(atual);      // dono desconhecido não some
+/* ── Nunca ofereça menos opções do que o dado já tem ─────────────────────────
+   Esta e a trava de COMPORTAMENTO, e ela existe porque a trava de LISTA sozinha
+   nao segurou: as listas envelhecem (a D-2 criou tres tipos em 03/08 e a tela so
+   soube em 10/08). Enquanto isso, cada item com valor desconhecido perdia o campo
+   ao ser salvo — e em silencio, porque o resultado era um dado LEGAL:
+     · `componente` caia no <option> vazio  ⇒ grava ""  ⇒ o validador testa
+       `if comp and ...`, string vazia e falsy ⇒ passa VERDE;
+     · `origem.tipo` caia em `reuniao`, que e um tipo valido ⇒ passa VERDE.
+   Os dois gates da casa aprovavam a corrupcao. `SUITE-024` (dono, 04/08) e
+   `SUITE-035` (os outros dois, 10/08) sao o mesmo defeito em campos diferentes. */
+function opcoes(lista, atual){
+  const l = [...lista];
+  if(atual && !l.includes(atual)) l.push(atual);      // valor desconhecido não some
   return l;
 }
+/* Segue `function` declarada, e não um arrow, de propósito: o
+   `testar-tela-criacao.mjs` procura esta assinatura na página para EXECUTAR a
+   função de verdade, em vez de manter uma cópia dela. */
+function opcoesDono(atual){ return opcoes(DONOS, atual); }
 
 /* ── Id automático a partir do projeto ───────────────────────────────────────
    O prefixo NÃO é derivado do nome do projeto — é lido do que já existe na fila.
@@ -704,8 +774,22 @@ function passa(i){
 }
 
 function render(){
-  const vis = dados.itens.filter(passa);
-  $("#pillTotal").textContent = `${vis.length} de ${dados.itens.length}${sujo?" · não salvo":""}`;
+  /* O acervo sai da conta de tarefas ANTES de qualquer outra coisa (CEO, 10/08).
+     Ele continua visível — numa coluna própria, ao fim do quadro — porque sumir
+     com ele seria trocar um problema por outro: o `HIST-011` (LGPD vendida sem
+     lastro) precisa continuar achável. O que ele deixa de fazer é INFLAR o número
+     que o gestor lê para decidir onde botar energia. */
+  const tarefas = dados.itens.filter(i=>!ehAcervo(i));
+  const acervo  = dados.itens.filter(ehAcervo);
+  const vis     = tarefas.filter(passa);
+  const visAc   = acervo.filter(passa);
+  $("#pillTotal").textContent =
+    `${vis.length} de ${tarefas.length} tarefa${tarefas.length===1?"":"s"}` +
+    (acervo.length?` · ${acervo.length} de acervo`:"") + (sujo?" · não salvo":"");
+  $("#pillTotal").title = acervo.length
+    ? `O total conta só TAREFAS. Os ${acervo.length} itens do projeto “${ACERVO}” são `+
+      `registro do que aconteceu, não trabalho a fazer — decisão do CEO em 10/08/2026.`
+    : "";
   $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "sem conexão";
   // branch fora da main precisa gritar: escrever ali não é escrever no dado canônico
   const forade = modo==="github" && BRANCH!=="main";
@@ -729,15 +813,30 @@ function render(){
     ou rode o levantamento e gere <code>dados/tarefas.json</code>.</div>`);
   $("#avisos").innerHTML = av.join("");
 
+  const porPrio = (a,b)=>
+    ({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
+    || String(a.id).localeCompare(String(b.id));
+
   $("#quadro").innerHTML = SITUACOES.map(s=>{
-    const itens = vis.filter(i=>i.situacao===s.k)
-      .sort((a,b)=>({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
-        || String(a.id).localeCompare(String(b.id)));
+    const itens = vis.filter(i=>i.situacao===s.k).sort(porPrio);
     return `<section class="coluna">
       <h3><span class="marca-sit" style="background:${s.c}"></span>${s.r}<span class="n">${itens.length}</span></h3>
       <div class="lista">${itens.map(cartao).join("") ||
         `<div class="vazio">nada aqui</div>`}</div></section>`;
-  }).join("");
+  }).join("")
+  /* A sexta coluna, e ela é de outra natureza — por isso a marca é listrada e não
+     um ponto de situação: o que está aqui não tem situação que importe, é fato
+     registrado. Só aparece quando há acervo, para não deixar coluna morta. */
+  + (acervo.length ? `<section class="coluna acervo">
+      <h3><span class="marca-acervo" aria-hidden="true"></span>Histórico — não é tarefa
+        <span class="n">${visAc.length}${visAc.length!==acervo.length?` de ${acervo.length}`:""}</span></h3>
+      <div class="lista">${visAc.sort(porPrio).map(cartao).join("") ||
+        `<div class="vazio">nada nesta fatia</div>`}</div>
+      <p class="nota-acervo">Registro do que <strong>aconteceu</strong> — fora do total de
+        tarefas por decisão do CEO (10/08/2026). O corte é o campo
+        <code>projeto&nbsp;=&nbsp;${ACERVO}</code>, não o prefixo do id: há 29 cards
+        <code>HIST-</code> que são trabalho vivo e seguem contando nas colunas acima.</p>
+    </section>` : "");
 
   $$(".item").forEach(el=>el.onclick=()=>abrir(el.dataset.id));
   montaFiltros();
@@ -952,9 +1051,11 @@ function abrir(id){
     if(img){ ev.preventDefault(); subirImagem(img.getAsFile()); }
   };
   $("#gConcluir").onclick = ()=>{
+    // Evidência AJUDA mas NÃO é obrigatória (decisão do CEO 08/08). Sem ela, confirma em vez de barrar.
     if(!(sel.evidencia||[]).length){
-      brinde("concluir exige prova — adicione o PR, commit ou documento", true);
-      $("#evRef").focus(); return;
+      if(!confirm("Sem evidência anexada.\n\nEvidência ajuda (PR, commit, documento — ou uma frase do que foi feito), mas NÃO é obrigatória.\n\nConcluir mesmo assim?")){
+        $("#evRef").focus(); return;
+      }
     }
     sel.situacao="feito"; sel.atualizadoEm=hoje(); mexeu(); abrir(sel.id); brinde("concluído");
   };
@@ -1022,7 +1123,7 @@ function editar(it){
       <input id="eTit" value="${esc(it.titulo)}"></div>
     <div class="dupla">
       <div class="campo"><label>Componente</label><select id="eComp">
-        <option value=""></option>${COMPONENTES.map(c=>op(c,it.componente)).join("")}</select></div>
+        <option value=""></option>${opcoes(COMPONENTES,it.componente).map(c=>op(c,it.componente)).join("")}</select></div>
       <div class="campo"><label>Dono</label><select id="eDono">
         ${opcoesDono(it.dono).map(d=>op(d,it.dono)).join("")}</select></div>
     </div>
@@ -1030,11 +1131,11 @@ function editar(it){
       <div class="campo"><label>Situação</label><select id="eSit">
         ${SITUACOES.map(s=>`<option value="${s.k}" ${it.situacao===s.k?"selected":""}>${s.r}</option>`).join("")}</select></div>
       <div class="campo"><label>Prioridade</label><select id="ePrio">
-        ${["alta","media","baixa"].map(p=>op(p,it.prioridade)).join("")}</select></div>
+        ${opcoes(["alta","media","baixa"],it.prioridade).map(p=>op(p,it.prioridade)).join("")}</select></div>
     </div>
     <div class="campo"><label>Origem — quem pediu, e onde isso está registrado</label>
       <div class="dupla">
-        <select id="eOTipo">${["reuniao","documento","pr","mesa","incidente","codigo"]
+        <select id="eOTipo">${opcoes(TIPOS_ORIGEM,it.origem?.tipo)
           .map(t=>op(t,it.origem?.tipo)).join("")}</select>
         <input id="eORef" value="${esc(it.origem?.ref||"")}" placeholder="2026-07-16 · docs/x.md · #193">
       </div>
