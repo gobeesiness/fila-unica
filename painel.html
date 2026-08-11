@@ -149,6 +149,31 @@ main{padding:18px;max-width:1500px;margin:0 auto}
 .marca-acervo{width:11px;height:11px;flex:none;border-radius:2px;
   background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 4px)}
 
+/* ── Frentes de trabalho ─────────────────────────────────────────────────────
+   Botões, e parecem botões: o painel inteiro filtra por eles. A barra é a fatia
+   do que FALTA, não do total — quem olha isto está decidindo onde botar gente. */
+#frentes{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:16px}
+.frente{
+  display:flex;flex-direction:column;gap:5px;text-align:left;
+  background:var(--card);border:1px solid var(--borda);border-radius:var(--r);
+  padding:13px 15px 14px;cursor:pointer;font:inherit;color:inherit;
+  transition:border-color .12s,box-shadow .12s;
+}
+.frente:hover{border-color:var(--muted);box-shadow:var(--sombra)}
+.frente:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
+.frente.on{border-color:var(--tinta);box-shadow:inset 0 0 0 1px var(--tinta)}
+.fr-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.fr-nome{font-size:12.5px;font-weight:700;letter-spacing:.02em}
+.fr-part{font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.fr-barra{display:block;height:5px;border-radius:99px;background:var(--borda);overflow:hidden}
+.fr-fill{display:block;height:100%;background:var(--tinta);border-radius:99px}
+.frente.on .fr-fill{background:var(--atencao)}
+.fr-n{font-size:25px;font-weight:700;line-height:1.1;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;margin-top:2px}
+.fr-u{font-size:11.5px;font-weight:600;color:var(--muted);letter-spacing:0}
+.fr-sub{font-size:11.5px;color:var(--muted);line-height:1.45}
+.fr-sub b{color:var(--tinta)}
+
 /* ── Tabela gêmea (todo gráfico tem uma) ── */
 details.tab{margin-top:10px;border-top:1px solid var(--borda-2);padding-top:8px}
 details.tab summary{cursor:pointer;font-size:11.5px;font-weight:700;color:var(--muted);
@@ -293,6 +318,7 @@ svg text{font:inherit}
 </header>
 
 <div class="filtros oculto" id="filtros">
+  <label>frente   <select id="fFrente" data-todos="todas"><option value="">todas</option></select></label>
   <label>projeto  <select id="fProjeto"><option value="">todos</option></select></label>
   <label>dono     <select id="fDono"><option value="">todos</option></select></label>
   <label>componente <select id="fComponente"><option value="">todos</option></select></label>
@@ -306,6 +332,17 @@ svg text{font:inherit}
 
   <section class="kpis" id="kpis"></section>
   <section id="acervo"></section>
+
+  <!-- frentes de trabalho — vem ANTES dos mapas de calor porque responde a
+       pergunta de quem decide ("onde ponho energia"), e os mapas respondem a de
+       quem executa ("onde está cada coisa"). -->
+  <article class="card">
+    <h2>Frentes de trabalho — construir × decidir</h2>
+    <p class="legenda-card" id="legFrente"></p>
+    <div id="frentes"></div>
+    <div class="rolar"><div id="progFrente"></div></div>
+    <details class="tab"><summary>ver como tabela</summary><div id="tabFrente"></div></details>
+  </article>
 
   <!-- 1. a peça central -->
   <article class="card">
@@ -459,7 +496,40 @@ const NIVEIS = 6;
 
 /* `origem.tipo` é aninhado; o resto é raso. Vazio vira "—" e continua contando:
    sumir com o item por causa de um campo em branco seria mentir no total. */
+/* ── FRENTES DE TRABALHO ─────────────────────────────────────────────────────
+   Pedido do CEO em 11/08/2026: "ver os percentuais das atividades por setor" —
+   front, back, definições. `componente` já responde isso, mas com granularidade
+   demais para quem decide onde botar energia: oito valores, e o maior deles
+   (`produto`, 34% dos vivos) não diz se é código ou decisão.
+
+   A frente agrupa `componente`; NÃO é campo novo no dado. Isso é deliberado —
+   um segundo campo para dizer a mesma coisa é o começo de dois lugares que
+   divergem, que é a doença que esta fila inteira combate. Se o agrupamento
+   estiver errado, corrige-se AQUI e o dado não é tocado.
+
+   O corte é entre CONSTRUIR e DECIDIR:
+     · Front / Back / Infra .. alguém escreve código e entrega.
+     · Definições ........... alguém decide, escreve ou negocia. Sem isso, o
+                              código não pode nem começar — e é por isso que
+                              elas contam como trabalho, e não como preâmbulo.
+   `reportgenerator` vai em Back por ser serviço, não tela. `arquitetura` e
+   `regra-de-negocio` vão em Definições porque são as camadas 2 e 3 da §3.11 r.4:
+   decisão escrita, não implementação. ─────────────────────────────────────── */
+const FRENTES = [
+  ["Front",      ["frontend"]],
+  ["Back",       ["backend", "reportgenerator"]],
+  ["Infra",      ["infra"]],
+  ["Definições", ["produto", "docs", "arquitetura", "regra-de-negocio"]],
+];
+const FRENTE_DE = new Map();
+for(const [frente, comps] of FRENTES) for(const c of comps) FRENTE_DE.set(c, frente);
+const ORDEM_FRENTE = [...FRENTES.map(f => f[0]), "sem frente"];
+
 function valorDe(item, chave){
+  if(chave === "frente"){
+    const c = (item || {}).componente;
+    return FRENTE_DE.get(c) || "sem frente";   // componente vazio ou fora do mapa
+  }
   const v = chave === "origem.tipo" ? ((item && item.origem) || {}).tipo : (item || {})[chave];
   return (v === undefined || v === null || v === "") ? "—" : String(v);
 }
@@ -469,7 +539,7 @@ function fatiar(itens, filtro){
   const casa = (i,c) => !f[c] || valorDe(i,c) === f[c];
   return itens.filter(i =>
     casa(i,"projeto") && casa(i,"dono") && casa(i,"componente") &&
-    casa(i,"prioridade") && casa(i,"situacao"));
+    casa(i,"prioridade") && casa(i,"situacao") && casa(i,"frente"));
 }
 
 /* Nunca ofereça menos colunas do que o dado já tem — a lição do `<select>` de
@@ -655,7 +725,7 @@ let token = null;
 let modo  = "desconectado";
 let etag  = null, sha = null, vigia = null, conferindo = false, visto = 0;
 let sombra = "linha";                 // linha | absoluto
-const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:""};
+const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:"", frente:""};
 
 const $  = s => document.querySelector(s);
 const esc = s => String(s??"").replace(/[&<>"']/g, c =>
@@ -1092,6 +1162,56 @@ function render(){
   if(bAc) bAc.onclick = () => window.open(
     `./index.html?projeto=${encodeURIComponent(ACERVO)}`, "_blank", "noopener");
 
+  /* ── frentes de trabalho ─────────────────────────────────────────────────
+     Ordenadas pelo ORDEM_FRENTE, não por volume nem por % — a ordem é a do
+     fluxo de trabalho (decide-se, depois constrói-se), e ordem que muda a cada
+     render é ordem que ninguém memoriza. */
+  const pf = progresso(itens, "frente");
+  const porFrente = new Map(pf.map(r => [r.chave, r]));
+  const vivosDe = r => r.aberto + r.fazendo + r.bloqueado;
+  const totalVivo = pf.reduce((s,r) => s + vivosDe(r), 0);
+
+  $("#frentes").innerHTML = ORDEM_FRENTE
+    .filter(f => porFrente.has(f))
+    .map(f => {
+      const r = porFrente.get(f);
+      const vivo = vivosDe(r);
+      const parte = totalVivo ? vivo / totalVivo : 0;
+      const on = filtro.frente === f;
+      return `<button class="frente${on ? " on" : ""}" data-f="${esc(f)}"
+                 aria-pressed="${on}" title="Clique para filtrar todo o painel por ${esc(f)}">
+        <span class="fr-top"><span class="fr-nome">${esc(f)}</span>
+          <span class="fr-part">${pc(parte)}</span></span>
+        <span class="fr-barra" aria-hidden="true">
+          <span class="fr-fill" style="width:${(parte*100).toFixed(1)}%"></span></span>
+        <span class="fr-n">${nf(vivo)} <span class="fr-u">por fazer</span></span>
+        <span class="fr-sub">${nf(r.feito)} de ${nf(r.emJogo)} em jogo já feitos
+          · <b>${pc(r.pct)}</b></span>
+      </button>`;
+    }).join("");
+
+  document.querySelectorAll(".frente").forEach(b => b.onclick = () => {
+    filtro.frente = filtro.frente === b.dataset.f ? "" : b.dataset.f;
+    sincronizarFiltros(); render();
+  });
+
+  const def = porFrente.get("Definições");
+  const constr = ["Front","Back","Infra"].reduce((s,f) =>
+    s + (porFrente.has(f) ? vivosDe(porFrente.get(f)) : 0), 0);
+  $("#legFrente").innerHTML =
+    `A <strong>frente agrupa <code>componente</code></strong> — não é campo novo no dado, e o ` +
+    `agrupamento está no topo do arquivo desta página. O número grande é <strong>o que falta ` +
+    `fazer</strong> (aberto + fazendo + bloqueado); a porcentagem ao lado é a fatia dele no ` +
+    `total por fazer.` +
+    (def && totalVivo
+      ? ` <strong>Hoje ${pc(vivosDe(def)/totalVivo)} do que falta é <em>Definições</em></strong> — ` +
+        `${nf(vivosDe(def))} itens que esperam alguém <em>decidir</em>, contra ${nf(constr)} que ` +
+        `esperam alguém <em>construir</em>. Isso não é fila de código represada; é decisão represada.`
+      : ``) +
+    ` Clique numa frente para filtrar o painel inteiro.`;
+
+  desenharProgresso("#progFrente", "#tabFrente", pf);
+
   /* ── 1 · projeto × situação ── */
   const colsSit = colunasDe(todos, "situacao", ORDEM_SITUACAO);
   const m1 = matriz(itens, "projeto", "situacao", colsSit);
@@ -1199,11 +1319,13 @@ function preencherFiltros(){
   põe("#fProjeto","projeto"); põe("#fDono","dono"); põe("#fComponente","componente");
   põe("#fPrioridade","prioridade", ORDEM_PRIORIDADE);
   põe("#fSituacao","situacao", ORDEM_SITUACAO);
+  põe("#fFrente","frente", ORDEM_FRENTE);
 }
 function sincronizarFiltros(){
   $("#fProjeto").value = filtro.projeto; $("#fDono").value = filtro.dono;
   $("#fComponente").value = filtro.componente; $("#fPrioridade").value = filtro.prioridade;
   $("#fSituacao").value = filtro.situacao;
+  $("#fFrente").value = filtro.frente;
 }
 
 function entrar(){
@@ -1274,7 +1396,7 @@ $("#sombraLinha").onclick = () => { sombra = "linha";
   $("#sombraLinha").classList.add("on"); $("#sombraAbs").classList.remove("on"); render(); };
 $("#sombraAbs").onclick = () => { sombra = "absoluto";
   $("#sombraAbs").classList.add("on"); $("#sombraLinha").classList.remove("on"); render(); };
-[["#fProjeto","projeto"],["#fDono","dono"],["#fComponente","componente"],
+[["#fFrente","frente"],["#fProjeto","projeto"],["#fDono","dono"],["#fComponente","componente"],
  ["#fPrioridade","prioridade"],["#fSituacao","situacao"]].forEach(([sel,chave]) => {
   const el = $(sel);
   el.dataset.todos = el.options[0].textContent;
