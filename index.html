@@ -78,6 +78,33 @@ main{padding:18px}
 .lista{padding:9px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 260px);overflow-y:auto}
 .vazio{padding:22px 13px;color:var(--fraco);font-size:12.5px;text-align:center}
 
+/* ── Abas ────────────────────────────────────────────────────────────────────
+   Duas, e só duas. A ativa se liga à faixa de filtros abaixo pela borda que
+   some — a metáfora de pasta, que diz "o que está embaixo pertence a esta". */
+.abas{display:flex;gap:6px;padding:14px 18px 0;align-items:stretch;
+  border-bottom:1px solid var(--borda);background:var(--fundo-2,transparent)}
+.aba{
+  display:flex;flex-direction:column;gap:1px;align-items:flex-start;
+  background:transparent;border:1px solid transparent;border-bottom:0;
+  border-radius:8px 8px 0 0;padding:9px 15px 10px;cursor:pointer;
+  font:inherit;color:var(--muted);position:relative;top:1px;transition:.12s;
+}
+.aba:hover{color:var(--tinta);background:var(--card)}
+.aba:focus-visible{outline:2px solid var(--mel);outline-offset:-2px}
+.aba.on{background:var(--card);border-color:var(--borda);border-bottom:1px solid var(--card);
+  color:var(--tinta)}
+.aba-t{font-size:13.5px;font-weight:700;letter-spacing:-.01em}
+.aba-n{position:absolute;top:7px;right:13px;font-size:11px;font-weight:700;
+  color:var(--fraco);font-variant-numeric:tabular-nums}
+.aba.on .aba-n{color:var(--mel-600,var(--mel))}
+.aba-t{padding-right:34px}
+.aba-s{font-size:11px;color:var(--fraco);line-height:1.35}
+@media (max-width:640px){
+  .abas{padding:10px 12px 0}
+  .aba-s{display:none}
+  .aba-t{padding-right:26px;font-size:12.5px}
+}
+
 /* ── Coluna do acervo ────────────────────────────────────────────────────────
    O destaque é por CONTRASTE DE NATUREZA, não por mais uma cor de situação: se
    ela ganhasse um ponto colorido como as outras cinco, leria-se como uma sexta
@@ -248,6 +275,27 @@ main{padding:18px}
   <button class="btn pri" id="salvar" disabled>Salvar no git</button>
 </header>
 
+<!-- ── Abas ──────────────────────────────────────────────────────────────────
+     Duas abas, UM arquivo. Nao e um definicoes.html de proposito: um segundo
+     arquivo com a mesma gaveta, a mesma fusao e o mesmo salvar seria uma COPIA,
+     e copia diverge — e o que o publicar-tela.py ja diz sobre editar direto no
+     repo publico, e o que custou o SUITE-030. A aba mora na URL (parametro
+     aba=) para poder ser linkada de fora, inclusive do painel.
+     Sem crase neste comentario: ha teste que a proibe, porque comentario com
+     crase dentro de template literal encerra a string e ja quebrou a tela. -->
+<nav class="abas oculto" id="abas" aria-label="Seções da fila">
+  <button class="aba" data-aba="tarefas" aria-current="true">
+    <span class="aba-t">Tarefas</span>
+    <span class="aba-n" id="nTarefas">—</span>
+    <span class="aba-s">o que vira código</span>
+  </button>
+  <button class="aba" data-aba="definicoes">
+    <span class="aba-t">Definições &amp; Histórico</span>
+    <span class="aba-n" id="nDefinicoes">—</span>
+    <span class="aba-s">o que precisa ser decidido ou já aconteceu</span>
+  </button>
+</nav>
+
 <div class="filtros oculto" id="filtros">
   <input type="search" id="busca" placeholder="Buscar em título, descrição, id, evidência…">
   <span id="chipsProj" style="display:flex;gap:6px;flex-wrap:wrap"></span>
@@ -350,6 +398,29 @@ const TIPOS_ORIGEM = ["reuniao","documento","pr","mesa","incidente","codigo",
 const ACERVO = "historico";
 const ehAcervo = i => i.projeto === ACERVO;
 
+/* ── As duas ABAS ────────────────────────────────────────────────────────────
+   Decisão do CEO em 11/08/2026: *"separa numa aba todos os cards que se referem
+   a histórico, definições, que não são tarefas descritas diretas que levam a
+   código imediato. Preciso desinflar a aba principal."*
+
+   O corte usa o MESMO agrupamento do painel (`FRENTES`, `dados/README.md`), e
+   isso é deliberado: dois lugares dizendo o que é "definição" com critérios
+   diferentes é o começo de duas verdades.
+
+     Tarefas ..... frontend · backend · reportgenerator · infra  (+ sem componente)
+     Definições .. produto · docs · arquitetura · regra-de-negocio  +  o acervo
+
+   ⚠️ E fica dito o que este corte NÃO resolve, porque foi medido antes de
+   escolher: `produto` é balde misto — dos 92 cards de alta vivos nele, vários
+   são trabalho direto (integração com o ARIPUÁ, migrar os seis fluxos de e-mail,
+   a campanha do SEBRAE) e vão para a aba de Definições junto com a definição de
+   verdade. O CEO escolheu desinflar agora e triar depois; a triagem é o
+   `SUITE-057`, e quando ela rodar este corte fica certo sem mudar uma linha
+   aqui — porque ele lê `componente`, não uma lista de ids. ─────────────────── */
+const COMP_DEFINICAO = new Set(["produto", "docs", "arquitetura", "regra-de-negocio"]);
+const ehDefinicao = i => ehAcervo(i) || COMP_DEFINICAO.has(i.componente);
+const ABA_DE = i => ehDefinicao(i) ? "definicoes" : "tarefas";
+
 /* Famílias de id que NÃO servem para item novo: nasceram de importação
    (a planilha, o histórico, os lotes) ou são código antigo de campanha. Sugerir
    `HIST-060` para uma tarefa de hoje misturaria acervo com trabalho. */
@@ -385,6 +456,10 @@ let sel    = null;          // item aberto na gaveta
    (front chamando o que o outro lado não tem) na sua versão barata. */
 const filtro = {q:"", projeto:new URLSearchParams(location.search).get("projeto")||"",
                 dono:"", componente:"", alta:false, semProva:false};
+
+/* A aba vem da URL para poder ser linkada (o painel aponta para as duas). */
+let aba = new URLSearchParams(location.search).get("aba") === "definicoes"
+          ? "definicoes" : "tarefas";
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -779,17 +854,35 @@ function render(){
      com ele seria trocar um problema por outro: o `HIST-011` (LGPD vendida sem
      lastro) precisa continuar achável. O que ele deixa de fazer é INFLAR o número
      que o gestor lê para decidir onde botar energia. */
-  const tarefas = dados.itens.filter(i=>!ehAcervo(i));
-  const acervo  = dados.itens.filter(ehAcervo);
-  const vis     = tarefas.filter(passa);
+  /* A aba parte o dado antes de tudo. O acervo continua saindo à parte DENTRO
+     da aba de Definições, porque "já aconteceu" e "falta decidir" são coisas
+     diferentes — juntá-los num monte só recriaria o problema noutra escala. */
+  const naAba   = dados.itens.filter(i => ABA_DE(i) === aba);
+  const acervo  = naAba.filter(ehAcervo);           // vazio na aba de tarefas
+  const semAc   = naAba.filter(i => !ehAcervo(i));
+  const vis     = semAc.filter(passa);
   const visAc   = acervo.filter(passa);
+
+  const vivo = i => ["aberto","fazendo","bloqueado"].includes(i.situacao);
+  const conta = a => dados.itens.filter(i => ABA_DE(i) === a && vivo(i)).length;
+  const nT = conta("tarefas"), nD = conta("definicoes");
+  $("#nTarefas").textContent = nT;
+  $("#nDefinicoes").textContent = nD;
+  $$("#abas .aba").forEach(b => {
+    const on = b.dataset.aba === aba;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-current", on ? "true" : "false");
+  });
+
+  const rot = aba === "tarefas" ? "tarefa" : "item";
   $("#pillTotal").textContent =
-    `${vis.length} de ${tarefas.length} tarefa${tarefas.length===1?"":"s"}` +
-    (acervo.length?` · ${acervo.length} de acervo`:"") + (sujo?" · não salvo":"");
-  $("#pillTotal").title = acervo.length
-    ? `O total conta só TAREFAS. Os ${acervo.length} itens do projeto “${ACERVO}” são `+
-      `registro do que aconteceu, não trabalho a fazer — decisão do CEO em 10/08/2026.`
-    : "";
+    `${vis.length + visAc.length} de ${naAba.length} ${rot}${naAba.length===1?"":"s"}` +
+    (sujo ? " · não salvo" : "");
+  $("#pillTotal").title = aba === "tarefas"
+    ? `Só o que vira código: frontend, backend, reportgenerator e infra. `+
+      `As outras ${nD} estão na aba Definições & Histórico.`
+    : `Definições (produto, docs, arquitetura, regra de negócio) e o acervo do `+
+      `projeto “${ACERVO}”. Nada aqui vira código sem alguém decidir antes.`;
   $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "sem conexão";
   // branch fora da main precisa gritar: escrever ali não é escrever no dado canônico
   const forade = modo==="github" && BRANCH!=="main";
@@ -798,9 +891,16 @@ function render(){
     ? `Você está numa branch, não na main. Salvar aqui escreve em ${BRANCH}.` : "";
 
   // avisos que a própria regra do SCHEMA exige
-  const semProva = dados.itens.filter(i=>i.situacao==="feito" && !(i.evidencia||[]).length);
-  const semOrigem= dados.itens.filter(i=>!i.origem?.ref);
+  /* Avisos da ABA, não do arquivo — senão o número fala de itens que a pessoa
+     não está vendo, e o botão "ver" abriria uma lista vazia. */
+  const semProva = naAba.filter(i=>i.situacao==="feito" && !(i.evidencia||[]).length);
+  const semOrigem= naAba.filter(i=>!i.origem?.ref);
   const av=[];
+  if(aba==="definicoes") av.push(`<div class="aviso info"><strong>Isto não é fila de
+    execução.</strong> São <strong>${nD}</strong> itens que esperam alguém <strong>decidir,
+    escrever ou negociar</strong> — mais o acervo do que já aconteceu. Nada aqui vira código
+    antes de sair daqui. As <strong>${nT}</strong> que viram código estão em
+    <button class="btn" style="margin-left:4px" onclick="window._irAba('tarefas')">Tarefas</button></div>`);
   const n1 = semProva.length, n2 = semOrigem.length;
   if(n1) av.push(`<div class="aviso ruim"><strong>${n1===1
       ? "1 item marcado “feito” sem uma única evidência."
@@ -835,7 +935,8 @@ function render(){
       <p class="nota-acervo">Registro do que <strong>aconteceu</strong> — fora do total de
         tarefas por decisão do CEO (10/08/2026). O corte é o campo
         <code>projeto&nbsp;=&nbsp;${ACERVO}</code>, não o prefixo do id: há 29 cards
-        <code>HIST-</code> que são trabalho vivo e seguem contando nas colunas acima.</p>
+        <code>HIST-</code> que são trabalho vivo e seguem na aba
+        <button class="btn" onclick="window._irAba('tarefas')">Tarefas</button>.</p>
     </section>` : "");
 
   $$(".item").forEach(el=>el.onclick=()=>abrir(el.dataset.id));
@@ -875,6 +976,20 @@ function montaFiltros(){
   $("#fSemProva").classList.toggle("on",filtro.semProva);
 }
 window._verSemProva = ()=>{ filtro.semProva=true; render(); };
+
+/* Trocar de aba reescreve a URL sem recarregar: quem copiar o endereço leva a
+   aba junto, e o botão voltar do navegador funciona. Recarregar perderia o que
+   ainda não foi salvo — e a gaveta guarda em memória até o "Salvar no git". */
+window._irAba = destino => {
+  if(destino !== "tarefas" && destino !== "definicoes") return;
+  aba = destino;
+  const u = new URL(location.href);
+  if(destino === "tarefas") u.searchParams.delete("aba");
+  else u.searchParams.set("aba", destino);
+  history.replaceState(null, "", u);
+  render();
+  window.scrollTo({top:0, behavior:"instant"});
+};
 
 /* ═══ Gaveta ═══ */
 function abrir(id){
@@ -1253,7 +1368,8 @@ function editar(it){
 /* ═══ Ligações ═══ */
 function entrar(){
   $("#capa").classList.add("oculto");
-  ["#topo","#filtros","#main"].forEach(s=>$(s).classList.remove("oculto"));
+  ["#topo","#abas","#filtros","#main"].forEach(s=>$(s).classList.remove("oculto"));
+  $$("#abas .aba").forEach(b => b.onclick = () => window._irAba(b.dataset.aba));
   render();
 }
 

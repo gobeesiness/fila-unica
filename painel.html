@@ -1159,8 +1159,11 @@ function render(){
       <button class="btn" id="verAcervo">ver na lista</button>
     </div>` : "";
   const bAc = $("#verAcervo");
+  /* O acervo mora na aba de Definições da tela desde 11/08 — mandar para a aba
+     sem o filtro mostraria também as definições, e com ele mostra só o acervo,
+     que é o que este botão promete. */
   if(bAc) bAc.onclick = () => window.open(
-    `./index.html?projeto=${encodeURIComponent(ACERVO)}`, "_blank", "noopener");
+    `./index.html?aba=definicoes&projeto=${encodeURIComponent(ACERVO)}`, "_blank", "noopener");
 
   /* ── frentes de trabalho ─────────────────────────────────────────────────
      Ordenadas pelo ORDEM_FRENTE, não por volume nem por % — a ordem é a do
@@ -1208,7 +1211,9 @@ function render(){
         `${nf(vivosDe(def))} itens que esperam alguém <em>decidir</em>, contra ${nf(constr)} que ` +
         `esperam alguém <em>construir</em>. Isso não é fila de código represada; é decisão represada.`
       : ``) +
-    ` Clique numa frente para filtrar o painel inteiro.`;
+    ` Clique numa frente para filtrar o painel inteiro, ou abra a ` +
+    `<a href="./index.html?aba=definicoes" target="_blank" rel="noopener">aba Definições da tela ↗</a> ` +
+    `para ver esses itens um a um.`;
 
   desenharProgresso("#progFrente", "#tabFrente", pf);
 
