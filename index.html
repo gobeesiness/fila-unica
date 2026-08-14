@@ -78,6 +78,24 @@ main{padding:18px}
 .lista{padding:9px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 260px);overflow-y:auto}
 .vazio{padding:22px 13px;color:var(--fraco);font-size:12.5px;text-align:center}
 
+/* ── Resumo (o painel na frente) ─────────────────────────────────────────────
+   O padrão de gestão: "como estamos" antes de "o que faço agora". Números
+   grandes, tabulares, sem gráfico — quem quer gráfico abre o painel. ───────── */
+.resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+  background:var(--borda);border-bottom:1px solid var(--borda)}
+.kpi{background:var(--card);padding:12px 16px 13px;display:flex;flex-direction:column;gap:1px}
+.kpi .k{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.kpi .v{font-size:26px;font-weight:700;line-height:1.1;letter-spacing:-.025em;
+  font-variant-numeric:tabular-nums;color:var(--tinta)}
+.kpi .s{font-size:11px;color:var(--fraco);line-height:1.4}
+.kpi.heroi .v{font-size:34px;color:var(--mel-600,var(--mel))}
+.kpi.alerta .v{color:var(--erro)}
+.kpi.fraco .v{font-size:20px;color:var(--muted);font-weight:600}
+@media (max-width:640px){
+  .resumo{grid-template-columns:repeat(2,1fr)}
+  .kpi.fraco{display:none}
+}
+
 /* ── Abas ────────────────────────────────────────────────────────────────────
    Duas, e só duas. A ativa se liga à faixa de filtros abaixo pela borda que
    some — a metáfora de pasta, que diz "o que está embaixo pertence a esta". */
@@ -99,6 +117,13 @@ main{padding:18px}
 .aba.on .aba-n{color:var(--mel-600,var(--mel))}
 .aba-t{padding-right:34px}
 .aba-s{font-size:11px;color:var(--fraco);line-height:1.35}
+/* A terceira aba é de outra natureza: o que está nela saiu do curso. Fica
+   separada por um respiro à esquerda e por marca própria — não é "mais uma
+   fatia do trabalho", é o que parou de disputar atenção. */
+.aba.arquivo{margin-left:auto}
+.aba.arquivo .aba-t::before{content:"▪ ";color:var(--fraco)}
+.aba.arquivo.on .aba-t::before{color:var(--erro)}
+.aba.arquivo .aba-s strong{color:var(--erro)}
 @media (max-width:640px){
   .abas{padding:10px 12px 0}
   .aba-s{display:none}
@@ -283,16 +308,30 @@ main{padding:18px}
      aba=) para poder ser linkada de fora, inclusive do painel.
      Sem crase neste comentario: ha teste que a proibe, porque comentario com
      crase dentro de template literal encerra a string e ja quebrou a tela. -->
+<!-- O resumo vem ANTES da lista: e o padrao de gestao -- "como estamos" em cima,
+     "o que faco agora" embaixo. Pedido do CEO em 13/08/2026. -->
+<section class="resumo oculto" id="resumo"></section>
+
 <nav class="abas oculto" id="abas" aria-label="Seções da fila">
-  <button class="aba" data-aba="tarefas" aria-current="true">
-    <span class="aba-t">Tarefas</span>
-    <span class="aba-n" id="nTarefas">—</span>
-    <span class="aba-s">o que vira código</span>
+  <button class="aba" data-aba="trabalho" aria-current="true">
+    <span class="aba-t">Trabalho</span>
+    <span class="aba-n" id="nTrabalho">—</span>
+    <span class="aba-s">a fazer · fazendo · bloqueado</span>
   </button>
   <button class="aba" data-aba="definicoes">
-    <span class="aba-t">Definições &amp; Histórico</span>
+    <span class="aba-t">Definições</span>
     <span class="aba-n" id="nDefinicoes">—</span>
-    <span class="aba-s">o que precisa ser decidido ou já aconteceu</span>
+    <span class="aba-s">precisa ser decidido antes de virar código</span>
+  </button>
+  <button class="aba arquivo" data-aba="entregue">
+    <span class="aba-t">Entregue</span>
+    <span class="aba-n" id="nEntregue">—</span>
+    <span class="aba-s">feito e descartado</span>
+  </button>
+  <button class="aba arquivo" data-aba="historico">
+    <span class="aba-t">Histórico</span>
+    <span class="aba-n" id="nHistorico">—</span>
+    <span class="aba-s">acervo — nunca foi tarefa</span>
   </button>
 </nav>
 
@@ -363,8 +402,12 @@ const SITUACOES = [
    RN-029 — a diretoria, que confirma operação crítica em dupla verificação. ── */
 const DONOS = ["cto","c-level","arquiteto","equipe-jobs","equipe-mensageria",
                "equipe-hive","equipe-financeiro","equipe-queen","equipe-propolis",
-               "equipe-zap","equipe-leads","terceiro","agente"];
-/* `agente` entrou em 10/08: dois itens do ARIPUÁ já o usavam (`PAGAMENTOS-048` e
+               "equipe-zap","equipe-leads","terceiro","agente","equipe-suite"];
+/* `equipe-suite` entrou em 13/08, pelo mesmo caminho: outra sessão passou a usá-lo
+   e o `testar-tela-criacao` acusou o órfão na primeira rodada seguinte. É a
+   TERCEIRA vez que este select fica atrás do dado (dono em 04/08, `agente` em
+   10/08, este agora) — e as três foram pegas por teste, não por leitura.
+   `agente` entrou em 10/08: dois itens do ARIPUÁ já o usavam (`PAGAMENTOS-048` e
    `-049`, trabalho executado por agente e não por equipe) e o `testar-tela-criacao`
    acusava o órfão desde então. É o MESMO defeito dos outros dois selects, no campo
    que já tinha a trava — prova de que a trava de comportamento não dispensa manter
@@ -419,7 +462,40 @@ const ehAcervo = i => i.projeto === ACERVO;
    aqui — porque ele lê `componente`, não uma lista de ids. ─────────────────── */
 const COMP_DEFINICAO = new Set(["produto", "docs", "arquitetura", "regra-de-negocio"]);
 const ehDefinicao = i => ehAcervo(i) || COMP_DEFINICAO.has(i.componente);
-const ABA_DE = i => ehDefinicao(i) ? "definicoes" : "tarefas";
+/* ── O ARQUIVO: o que não está EM CURSO ───────────────────────────────────────
+   Decisão do CEO, 13/08/2026: *"mostrar somente o que está aberto e o que está
+   se fazendo; separa bloqueados e feitos em outra aba para desinflar o total."*
+
+   ⚠️ E `bloqueado` NÃO é o mesmo que `feito`, por isso ele tem coluna própria e
+   em destaque dentro do arquivo. Feito é entrega — é histórico. **Bloqueado é
+   trabalho vivo parado, e pede um gesto.** Enterrar 33 bloqueados dentro de 421
+   feitos seria trocar um problema de volume por um de invisibilidade — e a
+   auditoria de 13/08 mostrou o custo disso: **três cards estavam travados por
+   dependência que já tinha sido concluída**, e nenhum deles aparecia numa
+   leitura por projeto. ─────────────────────────────────────────────────────── */
+const EM_CURSO = new Set(["aberto", "fazendo", "bloqueado"]);
+const ehArquivo = i => !EM_CURSO.has(i.situacao);
+
+/* ── As QUATRO abas ──────────────────────────────────────────────────────────
+   Decisão do CEO, 13/08/2026, corrigindo o corte anterior: *"deixa o bloqueado
+   junto com o a fazer e o fazendo; o feito em aba separada, assim como o
+   histórico."*
+
+   🔑 **`bloqueado` é trabalho EM CURSO** — parado, mas vivo, e some do radar se
+   for para o arquivo junto com a entrega. É o padrão de qualquer board de
+   gestão: *A fazer · Fazendo · Bloqueado* são colunas do MESMO quadro; o que sai
+   do quadro é o que foi entregue.
+
+     Trabalho ..... em curso, e vira código
+     Definições ... em curso, e precisa ser decidido antes
+     Entregue ..... `feito` e `descartado` — o que não disputa mais atenção
+     Histórico .... o acervo (`projeto == historico`), que nunca foi tarefa
+   ─────────────────────────────────────────────────────────────────────────── */
+const ABA_DE = i =>
+  ehAcervo(i)      ? "historico"
+  : ehArquivo(i)   ? "entregue"
+  : ehDefinicao(i) ? "definicoes"
+                   : "trabalho";
 
 /* Famílias de id que NÃO servem para item novo: nasceram de importação
    (a planilha, o histórico, os lotes) ou são código antigo de campanha. Sugerir
@@ -458,8 +534,9 @@ const filtro = {q:"", projeto:new URLSearchParams(location.search).get("projeto"
                 dono:"", componente:"", alta:false, semProva:false};
 
 /* A aba vem da URL para poder ser linkada (o painel aponta para as duas). */
-let aba = new URLSearchParams(location.search).get("aba") === "definicoes"
-          ? "definicoes" : "tarefas";
+const ABAS_VALIDAS = new Set(["trabalho", "definicoes", "entregue", "historico"]);
+let aba = ABAS_VALIDAS.has(new URLSearchParams(location.search).get("aba"))
+          ? new URLSearchParams(location.search).get("aba") : "trabalho";
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -863,26 +940,53 @@ function render(){
   const vis     = semAc.filter(passa);
   const visAc   = acervo.filter(passa);
 
-  const vivo = i => ["aberto","fazendo","bloqueado"].includes(i.situacao);
-  const conta = a => dados.itens.filter(i => ABA_DE(i) === a && vivo(i)).length;
-  const nT = conta("tarefas"), nD = conta("definicoes");
-  $("#nTarefas").textContent = nT;
+  /* O contador de cada aba mostra o TAMANHO DELA — e a faixa de cima mostra o
+     total. Os dois juntos respondem a queixa do CEO: "942" sozinho dá a
+     aparência de que nada foi feito; "262 em trabalho, 427 entregues" conta a
+     história certa. */
+  const conta = a => dados.itens.filter(i => ABA_DE(i) === a).length;
+  const nTr = conta("trabalho"), nD = conta("definicoes"),
+        nE  = conta("entregue"), nH = conta("historico");
+  $("#nTrabalho").textContent   = nTr;
   $("#nDefinicoes").textContent = nD;
+  $("#nEntregue").textContent   = nE;
+  $("#nHistorico").textContent  = nH;
   $$("#abas .aba").forEach(b => {
     const on = b.dataset.aba === aba;
     b.classList.toggle("on", on);
     b.setAttribute("aria-current", on ? "true" : "false");
   });
 
-  const rot = aba === "tarefas" ? "tarefa" : "item";
+  /* ── A faixa de resumo: o painel vem ANTES da lista ───────────────────────
+     Pedido do CEO em 13/08 — "trazer o painel para a frente e depois as abas".
+     É o padrão de qualquer ferramenta de gestão: o resumo em cima responde
+     "como estamos", a lista embaixo responde "o que faço agora". ─────────── */
+  const emCurso = nTr + nD;
+  const feitos  = dados.itens.filter(i => i.situacao === "feito").length;
+  const emJogo  = dados.itens.length - dados.itens.filter(i => i.situacao === "descartado").length - nH;
+  const pctFeito = emJogo ? Math.round(feitos / emJogo * 100) : 0;
+  const alta    = dados.itens.filter(i => EM_CURSO.has(i.situacao) && !ehAcervo(i)
+                                          && i.prioridade === "alta").length;
+  const bloq    = dados.itens.filter(i => i.situacao === "bloqueado").length;
+  $("#resumo").innerHTML = `
+    <div class="kpi heroi"><span class="k">Em curso</span><span class="v">${emCurso}</span>
+      <span class="s">${nTr} de trabalho · ${nD} de definição</span></div>
+    <div class="kpi"><span class="k">Entregue</span><span class="v">${feitos}</span>
+      <span class="s">${pctFeito}% do que está em jogo</span></div>
+    <div class="kpi${alta?" alerta":""}"><span class="k">Alta prioridade</span><span class="v">${alta}</span>
+      <span class="s">em curso, esperando alguém</span></div>
+    <div class="kpi${bloq?" alerta":""}"><span class="k">Bloqueado</span><span class="v">${bloq}</span>
+      <span class="s">${bloq?"parado, e pede gesto":"nenhum"}</span></div>
+    <div class="kpi fraco"><span class="k">No arquivo</span><span class="v">${dados.itens.length}</span>
+      <span class="s">tudo que já existiu, incluindo ${nH} de histórico</span></div>`;
+
+  const ROT = {trabalho:"em trabalho", definicoes:"em definição",
+               entregue:"entregue", historico:"de histórico"};
   $("#pillTotal").textContent =
-    `${vis.length + visAc.length} de ${naAba.length} ${rot}${naAba.length===1?"":"s"}` +
-    (sujo ? " · não salvo" : "");
-  $("#pillTotal").title = aba === "tarefas"
-    ? `Só o que vira código: frontend, backend, reportgenerator e infra. `+
-      `As outras ${nD} estão na aba Definições & Histórico.`
-    : `Definições (produto, docs, arquitetura, regra de negócio) e o acervo do `+
-      `projeto “${ACERVO}”. Nada aqui vira código sem alguém decidir antes.`;
+    `${vis.length + visAc.length} de ${naAba.length} ${ROT[aba]}` + (sujo ? " · não salvo" : "");
+  $("#pillTotal").title =
+    `Esta aba tem ${naAba.length}. O arquivo inteiro tem ${dados.itens.length} — `+
+    `e a diferença é o ponto: ${nE} já foram entregues e ${nH} são acervo.`;
   $("#pillFonte").textContent = modo==="github" ? `${REPO}@${BRANCH}` : "sem conexão";
   // branch fora da main precisa gritar: escrever ali não é escrever no dado canônico
   const forade = modo==="github" && BRANCH!=="main";
@@ -896,11 +1000,15 @@ function render(){
   const semProva = naAba.filter(i=>i.situacao==="feito" && !(i.evidencia||[]).length);
   const semOrigem= naAba.filter(i=>!i.origem?.ref);
   const av=[];
+  if(aba==="trabalho" && bloq) av.push(`<div class="aviso"><strong>${bloq}
+    ${bloq===1?"item está bloqueado":"itens estão bloqueados"}</strong> — na última coluna, porque
+    <strong>bloqueado é trabalho vivo</strong>, só parado. Não é entrega.
+    <em>A auditoria de 13/08 achou três travados por dependência que já tinha sido concluída.</em></div>`);
   if(aba==="definicoes") av.push(`<div class="aviso info"><strong>Isto não é fila de
     execução.</strong> São <strong>${nD}</strong> itens que esperam alguém <strong>decidir,
     escrever ou negociar</strong> — mais o acervo do que já aconteceu. Nada aqui vira código
-    antes de sair daqui. As <strong>${nT}</strong> que viram código estão em
-    <button class="btn" style="margin-left:4px" onclick="window._irAba('tarefas')">Tarefas</button></div>`);
+    antes de sair daqui. As <strong>${nTr}</strong> que viram código estão em
+    <button class="btn" style="margin-left:4px" onclick="window._irAba('trabalho')">Trabalho</button></div>`);
   const n1 = semProva.length, n2 = semOrigem.length;
   if(n1) av.push(`<div class="aviso ruim"><strong>${n1===1
       ? "1 item marcado “feito” sem uma única evidência."
@@ -917,7 +1025,16 @@ function render(){
     ({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
     || String(a.id).localeCompare(String(b.id));
 
-  $("#quadro").innerHTML = SITUACOES.map(s=>{
+  /* Cada aba mostra só as colunas que podem existir nela — coluna sempre vazia
+     é ruído que ensina a ignorar o quadro.
+     🔑 `bloqueado` é coluna do quadro de TRABALHO, e a última: é o fim da
+     esteira de quem está fazendo, não uma categoria de arquivo morto. */
+  const COLUNAS = aba === "entregue"  ? ["feito", "descartado"]
+                : aba === "historico" ? ["aberto","fazendo","bloqueado","feito","descartado"]
+                                      : ["aberto", "fazendo", "bloqueado"];
+
+  $("#quadro").innerHTML = SITUACOES.filter(s=>COLUNAS.includes(s.k))
+    .sort((x,y)=>COLUNAS.indexOf(x.k)-COLUNAS.indexOf(y.k)).map(s=>{
     const itens = vis.filter(i=>i.situacao===s.k).sort(porPrio);
     return `<section class="coluna">
       <h3><span class="marca-sit" style="background:${s.c}"></span>${s.r}<span class="n">${itens.length}</span></h3>
@@ -981,7 +1098,7 @@ window._verSemProva = ()=>{ filtro.semProva=true; render(); };
    aba junto, e o botão voltar do navegador funciona. Recarregar perderia o que
    ainda não foi salvo — e a gaveta guarda em memória até o "Salvar no git". */
 window._irAba = destino => {
-  if(destino !== "tarefas" && destino !== "definicoes") return;
+  if(!ABAS_VALIDAS.has(destino)) return;
   aba = destino;
   const u = new URL(location.href);
   if(destino === "tarefas") u.searchParams.delete("aba");
@@ -1368,7 +1485,7 @@ function editar(it){
 /* ═══ Ligações ═══ */
 function entrar(){
   $("#capa").classList.add("oculto");
-  ["#topo","#abas","#filtros","#main"].forEach(s=>$(s).classList.remove("oculto"));
+  ["#topo","#resumo","#abas","#filtros","#main"].forEach(s=>$(s).classList.remove("oculto"));
   $$("#abas .aba").forEach(b => b.onclick = () => window._irAba(b.dataset.aba));
   render();
 }
