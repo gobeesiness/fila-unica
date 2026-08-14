@@ -135,6 +135,27 @@ main{padding:18px;max-width:1500px;margin:0 auto}
 .est.bom{color:var(--bom)} .est.atencao{color:var(--atencao)} .est.critico{color:var(--critico)}
 .tile.alerta{border-color:var(--critico)}
 
+/* ── Notas por dimensão ────────────────────────────────────────────────────
+   Barra + número, sem gráfico: a nota é para ser lida em dois segundos. A cor
+   é semântica (bom/atenção/crítico) e NÃO é o acento da página. ─────────── */
+#notas{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.dim{display:flex;flex-direction:column;gap:5px;text-align:left;cursor:pointer;font:inherit;
+  color:inherit;background:var(--card);border:1px solid var(--borda);border-radius:var(--r);
+  padding:13px 15px 14px;transition:border-color .12s,box-shadow .12s}
+.dim:hover{border-color:var(--muted);box-shadow:var(--sombra)}
+.dim:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
+.dim.tem-alta{border-left:3px solid var(--critico)}
+.d-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.d-rot{font-size:12.5px;font-weight:700;letter-spacing:.02em}
+.d-nota{font-size:23px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.d-nota.bom{color:var(--bom)} .d-nota.atencao{color:var(--atencao)} .d-nota.critico{color:var(--critico)}
+.d-barra{display:block;height:5px;border-radius:99px;background:var(--borda);overflow:hidden}
+.d-fill{display:block;height:100%;border-radius:99px;background:var(--muted)}
+.d-fill.bom{background:var(--bom)} .d-fill.atencao{background:var(--atencao)}
+.d-fill.critico{background:var(--critico)}
+.d-sub{font-size:11.5px;color:var(--muted);line-height:1.45}
+.d-alta{color:var(--critico)}
+
 /* ── Faixa do acervo ─────────────────────────────────────────────────────────
    Tracejada e sem preenchimento de propósito: os tiles acima são a fila viva, e
    qualquer semelhança visual com eles convidaria a somar as duas coisas — que é
@@ -332,6 +353,13 @@ svg text{font:inherit}
 
   <section class="kpis" id="kpis"></section>
   <section id="acervo"></section>
+
+  <!-- Notas por dimensão — o pedido do CEO em 14/08: uma NOTA, não uma lista. -->
+  <article class="card" id="cardNotas">
+    <h2>Notas por dimensão</h2>
+    <p class="legenda-card" id="legNotas"></p>
+    <div id="notas"></div>
+  </article>
 
   <!-- frentes de trabalho — vem ANTES dos mapas de calor porque responde a
        pergunta de quem decide ("onde ponho energia"), e os mapas respondem a de
@@ -716,8 +744,49 @@ const ACERVO = "historico";
 const ehAcervo = i => valorDe(i,"projeto") === ACERVO;
 
 // expostas para o teste dirigir as funções REAIS da página, não cópias delas
+/* ── NOTAS POR DIMENSÃO ───────────────────────────────────────────────────────
+   Pedido do CEO em 14/08/2026: *"eu quero uma nota — não quero saber que tem 552
+   coisas para fazer"*.
+
+   🔑 A nota responde **"quanto do que a casa SABE já foi tratado"**, por dimensão.
+   `feitos / (feitos + vivos)` entre os cards que carregam as tags da dimensão.
+
+   🔴 O QUE ELA NÃO É, e isto tem de estar na tela e não só aqui: ela **não é
+   auditoria**. Ela mede o REGISTRO, não o sistema. Duas consequências que
+   parecem defeito e são o comportamento correto:
+     · **descobrir BAIXA a nota** — um achado novo entra como vivo. Uma varredura
+       de segurança bem-feita derruba o número, e isso é a nota funcionando;
+     · **nota alta pode significar "ninguém olhou"** — dimensão sem achado tem
+       nota cheia por ausência de conhecimento, não por saúde.
+   ⇒ por isso cada dimensão mostra também **quantos itens a sustentam**: nota de
+   96% sobre 5 cards diz menos que 71% sobre 116.
+
+   O eixo definitivo virá do documento de segurança que o CEO enviou em 02/08 e
+   que está com a equipe do Jobs. Estas dimensões são derivadas das
+   TAGS que a fila já usa — é o que dá para medir hoje, e está dito. ────────── */
+const DIMENSOES = [
+  {id:"seguranca",  rot:"Segurança",   tags:["seguranca","credencial","gate-cego","vazamento"]},
+  {id:"privacidade",rot:"Privacidade", tags:["lgpd","anonimato","pii","dados-pessoais"]},
+  {id:"usabilidade",rot:"Usabilidade", tags:["ux","usabilidade","responsividade","acessibilidade"]},
+  {id:"entrega",    rot:"Entrega",     tags:["deploy","ci","esteira","gate"]},
+  {id:"dado",       rot:"Dado",        tags:["backlog","contrato","vocabulario","classificacao"]},
+];
+
+function notas(itens){
+  const vivo = i => ["aberto","fazendo","bloqueado"].includes(valorDe(i,"situacao"));
+  return DIMENSOES.map(dim => {
+    const sel = itens.filter(i => (i.tags||[]).some(t => dim.tags.includes(t)));
+    const vivos = sel.filter(vivo);
+    const feitos = sel.filter(i => valorDe(i,"situacao") === "feito");
+    const base = vivos.length + feitos.length;          // descartado fica de fora
+    const alta = vivos.filter(i => valorDe(i,"prioridade") === "alta").length;
+    return {...dim, total: sel.length, base, vivos: vivos.length, feitos: feitos.length, alta,
+            nota: base ? Math.round(feitos.length / base * 100) : null};
+  });
+}
+
 window.__agregacoes = {valorDe, fatiar, colunasDe, contar, matriz, progresso,
-                       envelhecimento, riscos, resumo, ehAcervo};
+                       envelhecimento, riscos, resumo, ehAcervo, notas, DIMENSOES};
 
 /* ═══ Estado da vista (nada disto é dado; é só o que está na tela) ═══ */
 let dados = {versao:1, geradoEm:"", itens:[]};
@@ -1216,6 +1285,44 @@ function render(){
     `para ver esses itens um a um.`;
 
   desenharProgresso("#progFrente", "#tabFrente", pf);
+
+  /* ── Notas por dimensão ── */
+  const nt = notas(itens);
+  const semBase = nt.filter(x => x.base === 0).length;
+  $("#legNotas").innerHTML =
+    `A nota responde <strong>quanto do que a casa JÁ SABE foi tratado</strong> em cada dimensão — ` +
+    `<code>feitos ÷ (feitos + vivos)</code> entre os cards que carregam as tags dela. ` +
+    `<strong>Ela mede o registro, não o sistema.</strong> ` +
+    `🔴 <strong>Descobrir BAIXA a nota</strong>: um achado novo entra como vivo, então uma varredura ` +
+    `bem-feita derruba o número — e isso é a nota funcionando, não quebrando. ` +
+    `⚠️ E <strong>nota alta pode significar “ninguém olhou”</strong>: por isso cada uma mostra ` +
+    `<em>sobre quantos itens</em> ela foi calculada.` +
+    (semBase ? ` (${semBase} dimensão(ões) sem nenhum card — sem base para nota.)` : ``) +
+    ` O eixo definitivo virá do documento de 02/08, hoje com a equipe do Jobs.`;
+
+  $("#notas").innerHTML = nt.map(x => {
+    const cor = x.nota === null ? "" : x.nota >= 80 ? "bom" : x.nota >= 50 ? "atencao" : "critico";
+    const larg = x.nota === null ? 0 : x.nota;
+    return `<button class="dim${x.alta ? " tem-alta" : ""}" data-dim="${esc(x.id)}"
+        title="Clique para filtrar o painel pelos itens desta dimensão">
+      <span class="d-top"><span class="d-rot">${esc(x.rot)}</span>
+        <span class="d-nota ${cor}">${x.nota === null ? "—" : x.nota + "%"}</span></span>
+      <span class="d-barra" aria-hidden="true"><span class="d-fill ${cor}"
+        style="width:${larg}%"></span></span>
+      <span class="d-sub">${nf(x.feitos)} de ${nf(x.base)} tratados${
+        x.vivos ? ` · <strong>${nf(x.vivos)} em aberto</strong>` : ""}${
+        x.alta ? ` · <b class="d-alta">${nf(x.alta)} de alta</b>` : ""}</span>
+    </button>`;
+  }).join("");
+
+  document.querySelectorAll(".dim").forEach(b => b.onclick = () => {
+    const dim = DIMENSOES.find(d => d.id === b.dataset.dim);
+    if(!dim) return;
+    /* filtro por tag não existe na faixa (a faixa filtra campos, e tag é lista);
+       então o clique leva à TELA já filtrada pela busca, que varre tags. */
+    window.open(`./index.html?aba=trabalho&q=${encodeURIComponent(dim.tags[0])}`,
+                "_blank", "noopener");
+  });
 
   /* ── 1 · projeto × situação ── */
   const colsSit = colunasDe(todos, "situacao", ORDEM_SITUACAO);
