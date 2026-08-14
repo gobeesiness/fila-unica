@@ -147,7 +147,8 @@ main{padding:18px;max-width:1500px;margin:0 auto}
 .dim.tem-alta{border-left:3px solid var(--critico)}
 .d-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .d-rot{font-size:12.5px;font-weight:700;letter-spacing:.02em}
-.d-nota{font-size:23px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.d-nota{font-size:26px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.d-de{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:0}
 .d-nota.bom{color:var(--bom)} .d-nota.atencao{color:var(--atencao)} .d-nota.critico{color:var(--critico)}
 .d-barra{display:block;height:5px;border-radius:99px;background:var(--borda);overflow:hidden}
 .d-fill{display:block;height:100%;border-radius:99px;background:var(--muted)}
@@ -780,8 +781,11 @@ function notas(itens){
     const feitos = sel.filter(i => valorDe(i,"situacao") === "feito");
     const base = vivos.length + feitos.length;          // descartado fica de fora
     const alta = vivos.filter(i => valorDe(i,"prioridade") === "alta").length;
+    /* 🔟 A nota e de 0 a 10 (CEO, 14/08) — uma casa decimal, porque com base
+       pequena o inteiro esconde movimento: 3 cards fechados numa dimensao de 41
+       movem 0,7 e nao mudariam um inteiro. */
     return {...dim, total: sel.length, base, vivos: vivos.length, feitos: feitos.length, alta,
-            nota: base ? Math.round(feitos.length / base * 100) : null};
+            nota: base ? Math.round(feitos.length / base * 100) / 10 : null};
   });
 }
 
@@ -1290,8 +1294,8 @@ function render(){
   const nt = notas(itens);
   const semBase = nt.filter(x => x.base === 0).length;
   $("#legNotas").innerHTML =
-    `A nota responde <strong>quanto do que a casa JÁ SABE foi tratado</strong> em cada dimensão — ` +
-    `<code>feitos ÷ (feitos + vivos)</code> entre os cards que carregam as tags dela. ` +
+    `Nota de <strong>0 a 10</strong>: quanto do que a casa <strong>já sabe</strong> foi tratado em cada ` +
+    `dimensão — <code>feitos ÷ (feitos + vivos)</code> entre os cards que carregam as tags dela. ` +
     `<strong>Ela mede o registro, não o sistema.</strong> ` +
     `🔴 <strong>Descobrir BAIXA a nota</strong>: um achado novo entra como vivo, então uma varredura ` +
     `bem-feita derruba o número — e isso é a nota funcionando, não quebrando. ` +
@@ -1301,12 +1305,13 @@ function render(){
     ` O eixo definitivo virá do documento de 02/08, hoje com a equipe do Jobs.`;
 
   $("#notas").innerHTML = nt.map(x => {
-    const cor = x.nota === null ? "" : x.nota >= 80 ? "bom" : x.nota >= 50 ? "atencao" : "critico";
-    const larg = x.nota === null ? 0 : x.nota;
+    const cor = x.nota === null ? "" : x.nota >= 8 ? "bom" : x.nota >= 5 ? "atencao" : "critico";
+    const larg = x.nota === null ? 0 : x.nota * 10;
     return `<button class="dim${x.alta ? " tem-alta" : ""}" data-dim="${esc(x.id)}"
         title="Clique para filtrar o painel pelos itens desta dimensão">
       <span class="d-top"><span class="d-rot">${esc(x.rot)}</span>
-        <span class="d-nota ${cor}">${x.nota === null ? "—" : x.nota + "%"}</span></span>
+        <span class="d-nota ${cor}">${x.nota === null ? "—"
+          : x.nota.toFixed(1).replace(".", ",")}<span class="d-de">/10</span></span></span>
       <span class="d-barra" aria-hidden="true"><span class="d-fill ${cor}"
         style="width:${larg}%"></span></span>
       <span class="d-sub">${nf(x.feitos)} de ${nf(x.base)} tratados${
