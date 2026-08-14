@@ -154,6 +154,12 @@ main{padding:18px}
 .item.alta{border-left-color:var(--erro)}
 .prio-alta{color:var(--erro);font-weight:800}
 .semprova{color:var(--erro);font-weight:700}
+/* ── O selo do eixo (§3.18) ──────────────────────────────────────────────────
+   Só os eixos 1 e 2 ganham selo. O eixo 3 são 273 cards: marcá-los seria pintar
+   metade da tela para dizer "normal", e selo que aparece em tudo não é selo. */
+.eixo{font-weight:800;border-radius:5px;padding:1px 6px;font-size:10px;white-space:nowrap}
+.eixo-1{background:#fdecec;color:#a11d1d;border:1px solid #f3c9c9}
+.eixo-2{background:#eaf6ec;color:#1c6b34;border:1px solid #c6e5cf}
 
 /* ── Gaveta ── */
 .fundo{position:fixed;inset:0;background:rgba(65,57,59,.42);z-index:60;opacity:0;pointer-events:none;transition:.18s}
@@ -340,6 +346,12 @@ main{padding:18px}
   <span id="chipsProj" style="display:flex;gap:6px;flex-wrap:wrap"></span>
   <select id="fDono"><option value="">todos os donos</option></select>
   <select id="fComp"><option value="">todos os componentes</option></select>
+  <select id="fEixo" title="a régua de ordem — §3.18">
+    <option value="">todos os eixos</option>
+    <option value="1">🔐 eixo 1 — Segurança</option>
+    <option value="2">💰 eixo 2 — Receita</option>
+    <option value="3">⚙️ eixo 3 — Resto</option>
+  </select>
   <button class="chip" id="fAlta">só prioridade alta</button>
   <button class="chip" id="fSemProva">feito sem evidência</button>
   <button class="btn fant" id="limpar" style="font-size:12px">limpar</button>
@@ -497,6 +509,53 @@ const ABA_DE = i =>
   : ehDefinicao(i) ? "definicoes"
                    : "trabalho";
 
+/* ── A RÉGUA DE ORDEM (§3.18) ────────────────────────────────────────────────
+   Diretriz do CEO, call de 10/08/2026: *"você precisa botar segurança acima de
+   todas as estruturas, e vender acima de todas as estruturas. Depois disso você
+   vem rastreando."* Na mesma call ele leu esta tela e recusou o que viu — *"tem
+   183 coisas de alta prioridade para fazer. Não pode."*
+
+   ⇒ quando metade da fila é `alta`, `alta` deixou de discriminar. A régua é o
+   critério que desempata, e o EIXO pesa mais que `prioridade`: um card do eixo 1
+   marcado `media` vem ANTES de um do eixo 3 marcado `alta`.
+
+   🔑 É DERIVADA, não escrita — o eixo se calcula das tags na hora de exibir e
+   nenhum card é editado. A razão é de governança, não de comodidade: `situação`,
+   `prioridade`, `dono` e `evidência` são da EQUIPE que executa (§3.11 r.7). Se a
+   régua reescrevesse `prioridade`, o Arquiteto passaria por cima do campo alheio
+   em massa e ninguém conseguiria auditar depois qual promoção foi decisão de
+   quem executa e qual foi cálculo desta função.
+
+   ▸ Tag derivada erra, e por isso há VÁLVULA: `eixo-seguranca` e `eixo-receita`
+   são marcas explícitas que VENCEM o cálculo. Sem elas isto seria um
+   classificador cego, e classificador cego produz o mesmo mal que a régua veio
+   curar.
+
+   Os três cortes — privacidade dentro do eixo 1, cobrança e edital dentro do
+   eixo 2, régua derivada e não escrita — são decisão do CTO de 14/08/2026
+   (`SUITE-049`). Espelho em `dados/README.md` → "A régua de ordem". ────────── */
+const EIXO_SEGURANCA = new Set(["seguranca","credencial","segredo","exposicao","vazamento",
+                                "gate-cego","rotacao","lgpd","pii","dados-pessoais",
+                                "anonimato","juridico","retencao"]);
+const EIXO_RECEITA   = new Set(["comercial","receita","cliente","campanha","b2g","pagamento",
+                                "proposta","venda","asaas","contrato","lote","edital",
+                                "prospeccao"]);
+const EIXOS = [
+  {n:1, id:"seguranca", r:"Segurança", s:"🔐"},
+  {n:2, id:"receita",   r:"Receita",   s:"💰"},
+  {n:3, id:"resto",     r:"Resto",     s:"⚙️"},
+];
+function eixoDe(i){
+  const t = i.tags || [];
+  /* A válvula primeiro: marca explícita vence o cálculo. */
+  if(t.includes("eixo-seguranca")) return 1;
+  if(t.includes("eixo-receita"))   return 2;
+  if(t.some(x=>EIXO_SEGURANCA.has(x))) return 1;
+  if(t.some(x=>EIXO_RECEITA.has(x)))   return 2;
+  return 3;
+}
+const EIXO_POR_N = new Map(EIXOS.map(e=>[e.n,e]));
+
 /* Famílias de id que NÃO servem para item novo: nasceram de importação
    (a planilha, o histórico, os lotes) ou são código antigo de campanha. Sugerir
    `HIST-060` para uma tarefa de hoje misturaria acervo com trabalho. */
@@ -531,7 +590,7 @@ let sel    = null;          // item aberto na gaveta
    um recorte e entregaria a fila inteira — que é o defeito do `PROPOLIS-055`
    (front chamando o que o outro lado não tem) na sua versão barata. */
 const filtro = {q:"", projeto:new URLSearchParams(location.search).get("projeto")||"",
-                dono:"", componente:"", alta:false, semProva:false};
+                dono:"", componente:"", alta:false, semProva:false, eixo:""};
 
 /* A aba vem da URL para poder ser linkada (o painel aponta para as duas). */
 const ABAS_VALIDAS = new Set(["trabalho", "definicoes", "entregue", "historico"]);
@@ -916,6 +975,7 @@ function passa(i){
   if(filtro.dono && i.dono!==filtro.dono) return false;
   if(filtro.componente && i.componente!==filtro.componente) return false;
   if(filtro.alta && i.prioridade!=="alta") return false;
+  if(filtro.eixo && String(eixoDe(i))!==filtro.eixo) return false;
   if(filtro.semProva && !(i.situacao==="feito" && !(i.evidencia||[]).length)) return false;
   if(filtro.q){
     const alvo=[i.id,i.titulo,i.descricao,i.projeto,i.componente,i.dono,(i.tags||[]).join(" "),
@@ -965,16 +1025,27 @@ function render(){
   const feitos  = dados.itens.filter(i => i.situacao === "feito").length;
   const emJogo  = dados.itens.length - dados.itens.filter(i => i.situacao === "descartado").length - nH;
   const pctFeito = emJogo ? Math.round(feitos / emJogo * 100) : 0;
-  const alta    = dados.itens.filter(i => EM_CURSO.has(i.situacao) && !ehAcervo(i)
-                                          && i.prioridade === "alta").length;
   const bloq    = dados.itens.filter(i => i.situacao === "bloqueado").length;
+  /* ── Os KPIs da régua substituem "Alta prioridade" ────────────────────────
+     🔑 Não é economia de espaço — é o número que o CEO RECUSOU nesta tela em
+     10/08: *"tem 183 coisas de alta prioridade para fazer. Não pode."* Um KPI
+     que mostra 263 e não diz por onde começar é justamente o defeito que a
+     §3.18 veio corrigir; deixá-lo em cima da régua seria manter a pergunta sem
+     resposta ao lado da resposta. A alta não sumiu — virou a sublinha de cada
+     eixo, e o filtro `só prioridade alta` continua onde estava. ──────────── */
+  const vivos = dados.itens.filter(i => EM_CURSO.has(i.situacao) && !ehAcervo(i));
+  const doEixo = n => vivos.filter(i => eixoDe(i) === n);
+  const [e1, e2] = [doEixo(1), doEixo(2)];
+  const nAlta = l => l.filter(i => i.prioridade === "alta").length;
   $("#resumo").innerHTML = `
     <div class="kpi heroi"><span class="k">Em curso</span><span class="v">${emCurso}</span>
       <span class="s">${nTr} de trabalho · ${nD} de definição</span></div>
+    <div class="kpi${e1.length?" alerta":""}"><span class="k">🔐 Segurança</span><span class="v">${e1.length}</span>
+      <span class="s">eixo 1 — vem primeiro · ${nAlta(e1)} de alta</span></div>
+    <div class="kpi"><span class="k">💰 Receita</span><span class="v">${e2.length}</span>
+      <span class="s">eixo 2 · ${nAlta(e2)} de alta</span></div>
     <div class="kpi"><span class="k">Entregue</span><span class="v">${feitos}</span>
       <span class="s">${pctFeito}% do que está em jogo</span></div>
-    <div class="kpi${alta?" alerta":""}"><span class="k">Alta prioridade</span><span class="v">${alta}</span>
-      <span class="s">em curso, esperando alguém</span></div>
     <div class="kpi${bloq?" alerta":""}"><span class="k">Bloqueado</span><span class="v">${bloq}</span>
       <span class="s">${bloq?"parado, e pede gesto":"nenhum"}</span></div>
     <div class="kpi fraco"><span class="k">No arquivo</span><span class="v">${dados.itens.length}</span>
@@ -1021,8 +1092,12 @@ function render(){
     ou rode o levantamento e gere <code>dados/tarefas.json</code>.</div>`);
   $("#avisos").innerHTML = av.join("");
 
+  /* A ordem da §3.18: EIXO primeiro, prioridade depois, id como desempate
+     estável. Trocar as duas primeiras chaves de lugar desfaz a régua — é
+     exatamente o que o `testar-regua.mjs` (seção R) verifica. */
   const porPrio = (a,b)=>
-    ({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
+    (eixoDe(a) - eixoDe(b))
+    || ({alta:0,media:1,baixa:2}[a.prioridade||"media"]-{alta:0,media:1,baixa:2}[b.prioridade||"media"])
     || String(a.id).localeCompare(String(b.id));
 
   /* Cada aba mostra só as colunas que podem existir nela — coluna sempre vazia
@@ -1067,6 +1142,9 @@ function cartao(i){
     <div class="id">${esc(i.id)}</div>
     <div class="tit">${esc(i.titulo)}</div>
     <div class="rodape">
+      ${(()=>{const n=eixoDe(i); if(n===3) return "";
+              const e=EIXO_POR_N.get(n);
+              return `<span class="eixo eixo-${n}" title="régua de ordem §3.18 — eixo ${n}">${e.s} ${e.r}</span>`;})()}
       ${i.componente?`<span class="tag">${esc(i.componente)}</span>`:""}
       <span class="tag">${esc(i.dono||"—")}</span>
       <span class="tag data" title="atualizado em">${esc(fmtData(i.atualizadoEm))}</span>
@@ -1089,6 +1167,7 @@ function montaFiltros(){
     el.value=v; };
   enche("#fDono",[...new Set(dados.itens.map(i=>i.dono).filter(Boolean))].sort(),"todos os donos");
   enche("#fComp",[...new Set(dados.itens.map(i=>i.componente).filter(Boolean))].sort(),"todos os componentes");
+  $("#fEixo").value = filtro.eixo;
   $("#fAlta").classList.toggle("on",filtro.alta);
   $("#fSemProva").classList.toggle("on",filtro.semProva);
 }
@@ -1605,11 +1684,12 @@ $("#busca").oninput = e =>{ clearTimeout(tBusca);
   tBusca=setTimeout(()=>{ filtro.q=e.target.value.trim(); render(); },160); };
 $("#fDono").onchange = e =>{ filtro.dono=e.target.value; render(); };
 $("#fComp").onchange = e =>{ filtro.componente=e.target.value; render(); };
+$("#fEixo").onchange = e =>{ filtro.eixo=e.target.value; render(); };
 $("#fAlta").onclick = ()=>{ filtro.alta=!filtro.alta; render(); };
 $("#fSemProva").onclick = ()=>{ filtro.semProva=!filtro.semProva; render(); };
 $("#limpar").onclick = ()=>{
-  Object.assign(filtro,{q:"",projeto:"",dono:"",componente:"",alta:false,semProva:false});
-  $("#busca").value=""; $("#fDono").value=""; $("#fComp").value=""; render();
+  Object.assign(filtro,{q:"",projeto:"",dono:"",componente:"",alta:false,semProva:false,eixo:""});
+  $("#busca").value=""; $("#fDono").value=""; $("#fComp").value=""; $("#fEixo").value=""; render();
 };
 window.onbeforeunload = e =>{ if(sujo){ e.preventDefault(); return e.returnValue="há mudança não salva"; } };
 

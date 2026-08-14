@@ -157,6 +157,32 @@ main{padding:18px;max-width:1500px;margin:0 auto}
 .d-sub{font-size:11.5px;color:var(--muted);line-height:1.45}
 .d-alta{color:var(--critico)}
 
+/* ── A régua de ordem (§3.18) ────────────────────────────────────────────────
+   Três faixas empilhadas, e não três cartões lado a lado: a régua É uma ORDEM,
+   e uma linha embaixo da outra lê como ordem — cartões lado a lado leriam como
+   categorias de igual peso, que é justamente o que ela veio desfazer. */
+#regua{display:flex;flex-direction:column;gap:8px}
+.eix{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
+  text-align:left;cursor:pointer;font:inherit;color:inherit;background:var(--card);
+  border:1px solid var(--borda);border-radius:var(--r);padding:11px 14px;
+  transition:border-color .12s,box-shadow .12s}
+.eix:hover{border-color:var(--muted);box-shadow:var(--sombra)}
+.eix:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
+.eix[aria-pressed="true"]{border-color:var(--tinta);box-shadow:var(--sombra)}
+.eix-1{border-left:3px solid var(--critico)}
+.eix-2{border-left:3px solid var(--atencao)}
+.eix-3{border-left:3px solid var(--borda)}
+.e-rot{font-size:12.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.e-meio{display:flex;flex-direction:column;gap:5px;min-width:0}
+.e-sub{font-size:11.5px;color:var(--muted);line-height:1.4}
+.e-n{font-size:24px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  text-align:right;white-space:nowrap}
+.e-pct{display:block;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0}
+@media(max-width:520px){
+  .eix{grid-template-columns:1fr auto}
+  .e-meio{grid-column:1/-1}
+}
+
 /* ── Faixa do acervo ─────────────────────────────────────────────────────────
    Tracejada e sem preenchimento de propósito: os tiles acima são a fila viva, e
    qualquer semelhança visual com eles convidaria a somar as duas coisas — que é
@@ -354,6 +380,15 @@ svg text{font:inherit}
 
   <section class="kpis" id="kpis"></section>
   <section id="acervo"></section>
+
+  <!-- A régua de ordem (§3.18) — vem ANTES de tudo porque é ela que responde
+       "por onde começo". Notas dizem quanto já foi tratado; a régua diz o que
+       se faz primeiro, e as duas coisas não se substituem. -->
+  <article class="card" id="cardRegua">
+    <h2>A régua de ordem — segurança, vender, e depois o resto</h2>
+    <p class="legenda-card" id="legRegua"></p>
+    <div id="regua"></div>
+  </article>
 
   <!-- Notas por dimensão — o pedido do CEO em 14/08: uma NOTA, não uma lista. -->
   <article class="card" id="cardNotas">
@@ -554,7 +589,42 @@ const FRENTE_DE = new Map();
 for(const [frente, comps] of FRENTES) for(const c of comps) FRENTE_DE.set(c, frente);
 const ORDEM_FRENTE = [...FRENTES.map(f => f[0]), "sem frente"];
 
+/* ── A RÉGUA DE ORDEM (§3.18) ────────────────────────────────────────────────
+   Diretriz do CEO, 10/08/2026: *"segurança acima de todas as estruturas, e
+   vender acima de todas as estruturas. Depois disso você vem rastreando."*
+   Nasceu porque `prioridade: alta` deixou de discriminar — o CEO leu 183 altas
+   na tela e recusou.
+
+   🔑 É DERIVADA das tags, e por isso entra aqui como CHAVE DE AGREGAÇÃO e não
+   como seção isolada: assim o filtro, o `fatiar`, o `contar` e os mapas de calor
+   passam a entender "eixo" sem uma linha a mais — o mesmo movimento que fez
+   `frente` funcionar. Duplicar a lógica numa seção própria seria o começo de
+   duas verdades sobre a mesma pergunta.
+
+   ⚠️ NÃO confundir com as `DIMENSOES` lá embaixo: dimensão dá NOTA (o quanto já
+   foi resolvido num assunto), eixo dá ORDEM (o que se faz primeiro). Um assunto
+   com nota alta pode continuar no eixo 1.
+
+   As listas espelham `app/index.html` e `dados/README.md`; o
+   `scripts/testar-regua.mjs` reprova se os três divergirem. ────────────────── */
+const EIXO_SEGURANCA = new Set(["seguranca","credencial","segredo","exposicao","vazamento",
+                                "gate-cego","rotacao","lgpd","pii","dados-pessoais",
+                                "anonimato","juridico","retencao"]);
+const EIXO_RECEITA   = new Set(["comercial","receita","cliente","campanha","b2g","pagamento",
+                                "proposta","venda","asaas","contrato","lote","edital",
+                                "prospeccao"]);
+const ORDEM_EIXO = ["1 · 🔐 Segurança", "2 · 💰 Receita", "3 · ⚙️ Resto"];
+function eixoDe(item){
+  const t = (item || {}).tags || [];
+  if(t.includes("eixo-seguranca")) return 1;      // a válvula vence o cálculo
+  if(t.includes("eixo-receita"))   return 2;
+  if(t.some(x => EIXO_SEGURANCA.has(x))) return 1;
+  if(t.some(x => EIXO_RECEITA.has(x)))   return 2;
+  return 3;
+}
+
 function valorDe(item, chave){
+  if(chave === "eixo")   return ORDEM_EIXO[eixoDe(item) - 1];
   if(chave === "frente"){
     const c = (item || {}).componente;
     return FRENTE_DE.get(c) || "sem frente";   // componente vazio ou fora do mapa
@@ -568,7 +638,7 @@ function fatiar(itens, filtro){
   const casa = (i,c) => !f[c] || valorDe(i,c) === f[c];
   return itens.filter(i =>
     casa(i,"projeto") && casa(i,"dono") && casa(i,"componente") &&
-    casa(i,"prioridade") && casa(i,"situacao") && casa(i,"frente"));
+    casa(i,"prioridade") && casa(i,"situacao") && casa(i,"frente") && casa(i,"eixo"));
 }
 
 /* Nunca ofereça menos colunas do que o dado já tem — a lição do `<select>` de
@@ -789,8 +859,20 @@ function notas(itens){
   });
 }
 
+function regua(itens){
+  const vivo = i => ["aberto","fazendo","bloqueado"].includes(valorDe(i,"situacao"));
+  const vivos = itens.filter(i => vivo(i) && !ehAcervo(i));
+  const total = vivos.length;
+  return ORDEM_EIXO.map((rot, k) => {
+    const sel = vivos.filter(i => eixoDe(i) === k + 1);
+    return {n: k + 1, rot, itens: sel.length, alta: sel.filter(i => valorDe(i,"prioridade") === "alta").length,
+            pct: total ? sel.length / total : 0};
+  });
+}
+
 window.__agregacoes = {valorDe, fatiar, colunasDe, contar, matriz, progresso,
-                       envelhecimento, riscos, resumo, ehAcervo, notas, DIMENSOES};
+                       envelhecimento, riscos, resumo, ehAcervo, notas, DIMENSOES,
+                       eixoDe, regua, ORDEM_EIXO, EIXO_SEGURANCA, EIXO_RECEITA};
 
 /* ═══ Estado da vista (nada disto é dado; é só o que está na tela) ═══ */
 let dados = {versao:1, geradoEm:"", itens:[]};
@@ -798,7 +880,7 @@ let token = null;
 let modo  = "desconectado";
 let etag  = null, sha = null, vigia = null, conferindo = false, visto = 0;
 let sombra = "linha";                 // linha | absoluto
-const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:"", frente:""};
+const filtro = {projeto:"", dono:"", componente:"", prioridade:"", situacao:"", frente:"", eixo:""};
 
 const $  = s => document.querySelector(s);
 const esc = s => String(s??"").replace(/[&<>"']/g, c =>
@@ -1289,6 +1371,49 @@ function render(){
     `para ver esses itens um a um.`;
 
   desenharProgresso("#progFrente", "#tabFrente", pf);
+
+  /* ── A régua de ordem (§3.18) ──────────────────────────────────────────────
+     🔑 Ela ignora o PRÓPRIO filtro de eixo (e só ele): as três faixas são o
+     CONTROLE, não o resultado dele. Calculadas sobre `itens` cru, clicar no
+     eixo 1 zeraria as outras duas barras — o usuário perderia a comparação
+     exatamente no momento em que a está usando, e não veria como voltar. */
+  const rg = regua(fatiar(todos, {...filtro, eixo: ""}));
+  const noEixo3 = rg[2].itens;
+  $("#legRegua").innerHTML =
+    `Diretriz do <strong>CEO em 10/08</strong>: <em>“segurança acima de todas as estruturas, e vender ` +
+    `acima de todas as estruturas. Depois disso você vem rastreando.”</em> ` +
+    `<strong>O eixo pesa mais que <code>prioridade</code></strong> — um card do eixo 1 marcado ` +
+    `<code>media</code> vem antes de um do eixo 3 marcado <code>alta</code>. ` +
+    `🔑 Ele é <strong>derivado das tags</strong>: <strong>nenhum card foi editado</strong>, porque ` +
+    `<code>prioridade</code> é da equipe que executa. As tags <code>eixo-seguranca</code> e ` +
+    `<code>eixo-receita</code> sobrepõem o cálculo quando ele erra. ` +
+    `⚠️ <strong>Eixo 3 não é “dispensável”, é “depois”</strong> — ` +
+    `os ${nf(noEixo3)} itens continuam vivos e contados. ` +
+    `<strong>E a régua não afrouxa gate nenhum</strong>: ela diz o que vem primeiro, nunca o que ` +
+    `pode ser feito com menos rigor (§3.18).`;
+
+  $("#regua").innerHTML = rg.map(x => {
+    const cor = x.n === 1 ? "critico" : x.n === 2 ? "atencao" : "";
+    const marcado = filtro.eixo === x.rot;
+    return `<button class="eix eix-${x.n}" data-eixo="${esc(x.rot)}" aria-pressed="${marcado}"
+        title="Clique para filtrar o painel inteiro por este eixo">
+      <span class="e-rot">${esc(x.rot)}</span>
+      <span class="e-meio">
+        <span class="d-barra" aria-hidden="true"><span class="d-fill ${cor}"
+          style="width:${(x.pct*100).toFixed(1)}%"></span></span>
+        <span class="e-sub">${x.alta ? `<b class="d-alta">${nf(x.alta)} de alta</b> · ` : ""}${
+          pc(x.pct)} da fila viva</span>
+      </span>
+      <span class="e-n ${cor === "critico" ? "d-alta" : ""}">${nf(x.itens)}<span class="e-pct">vivos</span></span>
+    </button>`;
+  }).join("");
+
+  document.querySelectorAll(".eix").forEach(b => b.onclick = () => {
+    /* Alterna: clicar no eixo já marcado desfaz o filtro. Sem isso o painel
+       vira uma armadilha — entra-se num eixo e não se sai sem recarregar. */
+    filtro.eixo = filtro.eixo === b.dataset.eixo ? "" : b.dataset.eixo;
+    render();
+  });
 
   /* ── Notas por dimensão ── */
   const nt = notas(itens);
